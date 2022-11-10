@@ -1,6 +1,0 @@
-[submodule "pyqhe/fqhtools"]
-	# We want this submodule to be cloned automatically when
-	# the PyQHE repo is recursively clone.
-
-	path = pyqhe/fqhtools
-	url = git@github.com:TQCZJU/fqhtools.git
