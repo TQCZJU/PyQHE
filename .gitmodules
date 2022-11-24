@@ -1,0 +1,3 @@
+[submodule "pyqhe/submodules/fqhtools"]
+	path = pyqhe/submodules/fqhtools
+	url = git@github.com:TQCZJU/fqhtools.git

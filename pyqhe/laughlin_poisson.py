@@ -1,3 +1,4 @@
+# %%
 from typing import List
 import numpy as np
 from matplotlib import pyplot as plt
@@ -7,9 +8,10 @@ from pyqhe.equation.poisson import PoissonSolver, PoissonODE, PoissonFDM
 from pyqhe.utility.fermi import FermiStatistic
 from pyqhe.core.structure import Structure2D
 
-from pyqhe.basis
+from pyqhe.submodules import basis, interaction, hamiltonian, pseudo, utils
 
-
+length_b = 7.1
+# %%
 class OptimizeResult:
     """Optimize result about self-consistent iteration."""
 
@@ -30,6 +32,7 @@ class OptimizeResult:
         self.e_field = None
         # Accumulate electron density
         self.electron_density = None
+        self.laughlin_density = None
 
     def plot_quantum_well(self):
         """Plot dressed conduction band of quantum well, and electrons'
@@ -76,6 +79,8 @@ class LaughlinPoisson:
     def __init__(self,
                  num_elec,
                  num_orbit,
+                 screen_dist,
+                 length_b,
                  model: Structure2D,
                  schsolver: SchrodingerSolver = SchrodingerMatrix,
                  poisolver: PoissonSolver = PoissonFDM,
@@ -92,6 +97,7 @@ class LaughlinPoisson:
         # load fraction quantum hall parameters
         self.num_elec = num_elec
         self.num_orbit = num_orbit
+        self.length_b = length_b
         # load grid configure
         self.grid = model.universal_grid
         # load boundary condition
@@ -107,38 +113,60 @@ class LaughlinPoisson:
         # adjust optimizer
         self.learning_rate = learning_rate
         # load solver
-        self.sch_solver = schsolver(self.grid,
+        self.sch_solver: SchrodingerSolver = schsolver(self.grid,
                                     self.fi,
                                     self.cb_meff,
                                     self.bound_period)
         self.fermi_util = FermiStatistic(self.grid,
                                          self.cb_meff,
                                          self.doping)
-        self.poi_solver = poisolver(self.grid, self.doping, self.eps,
+        self.poi_solver: PoissonSolver = poisolver(self.grid, self.doping, self.eps,
                                     self.bound_dirichlet,
                                     self.bound_period)
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:
             self.accumulate_q = np.trapz(self.accumulate_q, x=grid)
+        # distance to the screening metal
+        self.screen_dist = screen_dist / self.length_b
         # Cache parameters
+        self.sch_solver.v_potential = self.fi
         self.eig_val = self.sch_solver.calc_evals()
         self.params = None
+        self.bg_pot = None
+        # initialize charge distribution without magnetic
+        # assume background potential is static
+        radius = np.sqrt(2 * self.num_orbit)
+        self.bg_pot = utils.calculate_background_potential(self.num_orbit, self.num_elec, radius, self.screen_dist)
+        # laughlin wavefunction
+        self.ll_density = self._calc_laughlin_density(self.bg_pot, 45)
 
-    def calc_laughlin_density(self):
+    def _calc_laughlin_density(self, background_pot, momentum=None):
         """Calculate the electron density of laughlin state."""
-        bvecs = BasisVectors(Ne, Norb, mom)
-        ccco = calculate_matrix_coeff(bvecs.number_orbitals, pseudo_coulomb())
-        ge, state = calculate_ground_state(bvecs,
-                                        ccco,
-                                        background_potential=val_list)
+        bvecs = basis.BasisVectors(self.num_elec, self.num_orbit, momentum)
+        ccco = interaction.calculate_matrix_coeff(bvecs.number_orbitals,
+                                                  pseudo.pseudo_coulomb())
+        ge, state = hamiltonian.calculate_ground_state(
+            bvecs, ccco, background_potential=background_pot)
+        # note the laughlin wave function represent the in-plate density
+        return state.electron_density((self.grid[0] - self.grid[0][-1] / 2) / self.length_b)  # radial direction
 
-    def _calc_net_density(self, n_states, wave_func):
+    def _calc_net_density(self, n_states, wave_func, mode='modulate'):
         """Calculate the net charge density."""
 
         elec_density = np.zeros_like(self.doping)
         for i, distri in enumerate(n_states):
             elec_density += distri * wave_func[i] * np.conj(wave_func[i])
+        if mode == 'modulate':
+            # modulation 2d single electron wave function
+            # use numpy broadcast
+            elec_density = elec_density * self.ll_density[:, np.newaxis]
+        else:
+            # Separation of variable method, just multiply in-plane and out-plane wavefunction
+            # cut the center array of out-plane density
+            outplane = elec_density[int(len(elec_density) / 2)]
+            elec_density = np.kron(self.ll_density, outplane.reshape(-1, 1))
+            # note here the method loss information about edges
         # normalize by electric neutrality
         accumu_elec = elec_density.copy()
         for grid in self.grid[::-1]:
@@ -146,6 +174,7 @@ class LaughlinPoisson:
         norm = self.accumulate_q / accumu_elec
         elec_density *= norm
         # Let dopants density minus electron density
+        self.test_density = elec_density
         net_density = self.doping - elec_density
 
         return net_density
@@ -158,7 +187,6 @@ class LaughlinPoisson:
             v_potential: optimizer parameters.
         """
 
-        # perform schrodinger solver
         v_potential = self.fi + params
         self.sch_solver.v_potential = v_potential
         eig_val, wave_func = self.sch_solver.calc_esys()
@@ -166,6 +194,8 @@ class LaughlinPoisson:
         _, n_states = self.fermi_util.fermilevel(eig_val, wave_func, self.temp)
         # calculate the net charge density
         sigma = self._calc_net_density(n_states, wave_func)
+        # TODO: implement self-consistence background potential solver
+        # Maybe Green function? FDM?
         # perform poisson solver
         self.poi_solver.charge_density = sigma
         params = self.poi_solver.calc_poisson()
@@ -211,19 +241,120 @@ class LaughlinPoisson:
         res.fermi_energy, res.n_states = self.fermi_util.fermilevel(
             res.eig_val, res.wave_function, self.temp)
         res.sigma = self._calc_net_density(res.n_states, res.wave_function)
+        res.laughlin_density = self.ll_density
+        # noted the 2d charge density is rho tensors sigma.T
+        res.electron_density = self.doping - res.sigma
         # full wave function
         full_wave_function = []
         for wf in res.wave_function:
             new_wf = wf
             full_wave_function.append(new_wf)
         res.wave_function = np.asarray(full_wave_function)
-        self.poi_solver.charge_density = res.sigma
+        self.poi_solver.charge_density = res.electron_density
         self.poi_solver.calc_poisson()
         res.e_field = self.poi_solver.e_field
-        # Accumulate electron areal density in the subbands
-        res.electron_density = np.zeros_like(self.doping)
-        for i, distri in enumerate(res.n_states):
-            res.electron_density += distri * res.wave_function[i] * np.conj(
-                res.wave_function[i])
+        # # Accumulate electron areal density in the subbands
+        # res.electron_density = np.zeros_like(self.doping)
+        # for i, distri in enumerate(res.n_states):
+        #     res.electron_density += distri * res.wave_function[i] * np.conj(
+        #         res.wave_function[i])
 
         return res, loss
+
+    def test(self):
+        self.params = 0  # coulomb potential
+        eig_val, wave_func = self.sch_solver.calc_esys()
+        self.temp_wf = wave_func
+        # calculate energy band distribution
+        _, n_states = self.fermi_util.fermilevel(eig_val, wave_func, self.temp)
+        # calculate the out-plane charge density
+        self.elec_density = np.zeros_like(self.doping)
+        for i, distri in enumerate(n_states):
+            self.elec_density += distri * wave_func[i] * np.conj(wave_func[i])
+        # assume background potential is static
+        radius = np.sqrt(2 * self.num_orbit)
+        self.bg_pot = utils.calculate_background_potential(self.num_orbit, self.num_elec, radius, self.screen_dist)
+        # laughlin wavefunction
+        self.ll_density = self._calc_laughlin_density(self.bg_pot, 45)
+        # Separation of variable method, just multiply in-plane and out-plane wavefunction
+        # cut the center array of out-plane density
+
+        # loss, temp_params = self._iteration(self.params)
+# %%
+from pyqhe.core import Layer
+
+
+layer_list = []
+layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))  # insert background screening plane in the middle
+layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
+layer_list.append(Layer(5, 0.24, 0.0, name='spacer'))
+layer_list.append(Layer(20, 0, 0, name='quantum_well'))
+layer_list.append(Layer(5, 0.24, 0.0, name='spacer'))
+layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
+layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))
+
+dist = 27 / length_b  # electron locate at the center of wall
+model2d = Structure2D(layer_list, width=100, temp=10, delta=1, bound_period=[True, False])
+# add boundary condition
+grid = model2d.universal_grid
+delta = grid[0][1] - grid[0][0]
+xv, yv = np.meshgrid(*grid, indexing='ij')
+plate_length = (xv < 35) * (xv > 15)
+top_plate = (yv <= dist + 1) * (yv >= dist - 1)
+bound = np.empty_like(xv)
+bound[:] = np.nan
+bound[top_plate * plate_length] = -0.02  # meV
+# model.add_dirichlet_boundary(bound)
+lp = LaughlinPoisson(num_elec=6, num_orbit=18, length_b=length_b, model=model2d, screen_dist=dist)
+# %%
+loss, charge_pot = lp._iteration(0)
+# %%
+lp.test()
+# load the initial charge distribution
+plt.pcolormesh(xv, yv, lp.temp_wf[0] * np.conj(lp.temp_wf[0]))
+plt.colorbar()
+plt.xlabel('Axis X(nm)')
+plt.ylabel('Axis Z(nm)')
+plt.show()
+# %%
+# add magnetic field, let the electrons form multi-body Laughlin wavefuntion
+# calculate in-plane charge density by fraction quantum hall theory
+# normalize in-plane density
+plt.plot(lp.grid[0], lp.ll_density * 2 * np.pi)
+# %%
+# Separation of variable method, just multiply in-plane and out-plane wavefunction
+# mode 'separate_var'
+outplane = lp.elec_density[int(len(lp.elec_density) / 2)]
+plt.plot(lp.grid[1], outplane)
+# %%
+charge_density = np.kron(lp.ll_density, outplane.reshape(-1, 1))
+plt.pcolormesh(xv, yv, charge_density.T)
+plt.colorbar()
+plt.xlabel('Axis X(nm)')
+plt.ylabel('Axis Z(nm)')
+plt.show()
+# %%
+# modulation 2d single electron wave function
+# mode 'modulate'
+plt.pcolormesh(xv, yv, lp.test_density)
+plt.colorbar()
+plt.xlabel('Axis X(nm)')
+plt.ylabel('Axis Z(nm)')
+plt.show()
+# %%
+# pass the modulate charge density to poisson function
+plt.pcolormesh(xv, yv, charge_pot)
+plt.colorbar()
+plt.xlabel('Axis X(nm)')
+plt.ylabel('Axis Z(nm)')
+plt.show()
+# %%
+# pass the modulate charge density to poisson function
+plt.pcolormesh(xv, yv, lp.sigma)
+plt.colorbar()
+plt.xlabel('Axis X(nm)')
+plt.ylabel('Axis Z(nm)')
+plt.show()
+# %%
+res, loss = lp.self_consistent_minimize()
+# %%
