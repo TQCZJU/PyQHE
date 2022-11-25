@@ -271,11 +271,6 @@ class LaughlinPoisson:
         self.elec_density = np.zeros_like(self.doping)
         for i, distri in enumerate(n_states):
             self.elec_density += distri * wave_func[i] * np.conj(wave_func[i])
-        # assume background potential is static
-        radius = np.sqrt(2 * self.num_orbit)
-        self.bg_pot = utils.calculate_background_potential(self.num_orbit, self.num_elec, radius, self.screen_dist)
-        # laughlin wavefunction
-        self.ll_density = self._calc_laughlin_density(self.bg_pot, 45)
         # Separation of variable method, just multiply in-plane and out-plane wavefunction
         # cut the center array of out-plane density
 
@@ -293,18 +288,18 @@ layer_list.append(Layer(5, 0.24, 0.0, name='spacer'))
 layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
 layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))
 
-dist = 27 / length_b  # electron locate at the center of wall
+dist = 27  # electron locate at the center of wall
 model2d = Structure2D(layer_list, width=100, temp=10, delta=1, bound_period=[True, False])
 # add boundary condition
 grid = model2d.universal_grid
 delta = grid[0][1] - grid[0][0]
 xv, yv = np.meshgrid(*grid, indexing='ij')
-plate_length = (xv < 35) * (xv > 15)
-top_plate = (yv <= dist + 1) * (yv >= dist - 1)
+plate_length = (xv < 90) * (xv > 10)
+top_plate = (yv <= 10 + 1) * (yv >= 10 - 1)
 bound = np.empty_like(xv)
 bound[:] = np.nan
-bound[top_plate * plate_length] = -0.02  # meV
-# model.add_dirichlet_boundary(bound)
+bound[top_plate * plate_length] = 0  # meV
+model2d.add_dirichlet_boundary(bound)
 lp = LaughlinPoisson(num_elec=6, num_orbit=18, length_b=length_b, model=model2d, screen_dist=dist)
 # %%
 loss, charge_pot = lp._iteration(0)
@@ -330,16 +325,22 @@ plt.plot(lp.grid[1], outplane)
 charge_density = np.kron(lp.ll_density, outplane.reshape(-1, 1))
 plt.pcolormesh(xv, yv, charge_density.T)
 plt.colorbar()
-plt.xlabel('Axis X(nm)')
-plt.ylabel('Axis Z(nm)')
+plt.xlabel('Axis z(nm)')
+plt.ylabel('Axis w(nm)')
 plt.show()
 # %%
 # modulation 2d single electron wave function
 # mode 'modulate'
 plt.pcolormesh(xv, yv, lp.test_density)
 plt.colorbar()
-plt.xlabel('Axis X(nm)')
-plt.ylabel('Axis Z(nm)')
+plt.xlabel('Axis z(nm)')
+plt.ylabel('Axis w(nm)')
+plt.show()
+# %%
+plt.pcolormesh(xv, yv, lp.elec_density)
+plt.colorbar()
+plt.xlabel('Axis Z(nm)')
+plt.ylabel('Axis W(nm)')
 plt.show()
 # %%
 # pass the modulate charge density to poisson function
