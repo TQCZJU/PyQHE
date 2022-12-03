@@ -34,23 +34,24 @@ class PoissonODE(PoissonSolver):
     """
 
     def __init__(self, grid: np.ndarray, charge_density: np.ndarray,
-                 eps: np.ndarray) -> None:
+                 eps: np.ndarray, *args, **kwargs) -> None:
         super().__init__()
-
+        if isinstance(grid, list):  # nd grid
+            grid = grid[0]
         self.grid = grid
         self.charge_density = charge_density
         self.eps = eps
 
     def calc_poisson(self, **kwargs):
         """Calculate electric field."""
-
+        # Gauss's law
         d_z = cumulative_trapezoid(const.q * self.charge_density,
                                    self.grid,
                                    initial=0)
         self.e_field = d_z / self.eps
         # integral the potential
         # note here we put a electron, dV/dz = E
-        self.v_potential = cumulative_trapezoid(self.e_field,
+        self.v_potential = cumulative_trapezoid(-1.0 * self.e_field,
                                                 self.grid,
                                                 initial=0)
 
@@ -135,7 +136,7 @@ class PoissonFDM(PoissonSolver):
             a_mat_list.append(
                 d_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
         a_mat = np.sum(a_mat_list, axis=0)
-        b_vec = const.q * self.charge_density.flatten()
+        b_vec = -1.0 * const.q * self.charge_density.flatten()
 
         if self.bound_dirichlet is not None:
             delta = self.grid[0][1] - self.grid[0][0]
@@ -151,7 +152,7 @@ class PoissonFDM(PoissonSolver):
 
         self.v_potential = solve(a_mat, b_vec).reshape(self.dim)
         # calculate gradient of potential
-        self.e_field = np.gradient(self.v_potential)
+        self.e_field = np.gradient(-1.0 * self.v_potential)
         return self.v_potential
 
 

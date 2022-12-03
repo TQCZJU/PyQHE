@@ -32,8 +32,9 @@ class SchrodingerSolver(ABC):
 class SchrodingerShooting(SchrodingerSolver):
     """Shooting method solver for calculation Schrodinger equation."""
 
-    def __init__(self, grid: np.ndarray, v_potential, cb_meff) -> None:
-
+    def __init__(self, grid: np.ndarray, v_potential, cb_meff, *args, **kwargs) -> None:
+        if isinstance(grid, list):  # nd grid
+            grid = grid[0]
         # Schrodinger equation's parameters
         self.v_potential = v_potential
         self.cb_meff = cb_meff

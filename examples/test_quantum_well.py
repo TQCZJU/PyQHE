@@ -5,7 +5,7 @@ from scipy.stats import norm
 from matplotlib import pyplot as plt
 
 from pyqhe.core.structure import Layer, Structure1D
-from pyqhe.schrodinger_poisson import SchrodingerPoisson
+from pyqhe.schrodinger_poisson import SchrodingerPoisson, SchrodingerShooting
 from pyqhe.equation.poisson import PoissonFDM, PoissonODE
 from pyqhe.equation.schrodinger import SchrodingerMatrix
 

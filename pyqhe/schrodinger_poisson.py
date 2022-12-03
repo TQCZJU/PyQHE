@@ -130,8 +130,10 @@ class SchrodingerPoisson:
             accumu_elec = np.trapz(accumu_elec, x=grid)
         norm = self.accumulate_q / accumu_elec
         elec_density *= norm
-        # Let dopants density minus electron density
-        net_density = self.doping - elec_density
+        # noted we consider a electron in the conductive band, and high electron
+        # density are repulsive to an electron.
+        net_density = elec_density - self.doping
+        # the sign will be conflicted with general potential definition due to self.fi
 
         return net_density
 
