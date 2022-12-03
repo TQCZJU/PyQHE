@@ -330,6 +330,7 @@ class Structure2D:
                  temp=0.01,
                  spline_storage=False,
                  bound_period=None,
+                 bound_neumann=None,
                  **kwargs) -> None:
 
         self.layers = layer_list
@@ -344,6 +345,13 @@ class Structure2D:
         self._universal_grid = None
         self.dim = None
         self.bound_dirichlet = None
+        self.bound_neumann = None
+
+        if bound_neumann is not None and len(bound_neumann) == 2:
+            self.bound_neumann = bound_neumann
+        else:
+            self.bound_neumann = [None] * 2
+
         if bound_period is not None and len(bound_period) == 2:
             self.bound_period = bound_period
         else:
@@ -384,6 +392,7 @@ class Structure2D:
 
     def generate_grid(self, num_gridpoint, type='fdm'):
         """Generate a set of grid for solving differential equation numerically.
+        Noted grid_0 for width, grid_1 for stack layer
         """
 
         grid_axis_1 = np.linspace(self.bound_locs[0], self.bound_locs[-1],
@@ -425,6 +434,10 @@ class Structure2D:
     def add_dirichlet_boundary(self, bound: np.ndarray):
         if bound.shape == tuple(self.dim):
             self.bound_dirichlet = bound
+
+    def add_neumann_boundary(self, bound: np.ndarray):
+        if bound.shape == tuple(self.dim):
+            self.bound_neumann = bound
 
 
 class Structure3D:

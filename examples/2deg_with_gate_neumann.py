@@ -22,11 +22,11 @@ eff_thickness = 5
 # construct 2d mesh grid for simulation
 layer_list = []
 layer_list.append(Layer(100, 0, 0, name='simulation_range'))
-model2d = Structure2D(layer_list, width=80, delta=1)
+model2d = Structure2D(layer_list, width=80, delta=1, bound_neumann=[True, False])
 grid = model2d.universal_grid
 # add boundary condition
 xv, yv = np.meshgrid(*grid, indexing='ij')
-plate_length = (xv < 70) * (xv > 10)
+plate_length = (xv < 60)
 metal_plate = (yv <= loc_metal_plane + 1) * (yv >= loc_metal_plane - 1)
 bound = np.empty_like(xv)
 bound[:] = np.nan
@@ -34,7 +34,11 @@ bound[:] = np.nan
 bound[metal_plate * plate_length] = 5  # meV
 model2d.add_dirichlet_boundary(bound)
 
-
+# add Neumann boundary condition to rotation symmetry axis
+# neumann_bound = np.empty_like(xv)
+# neumann_bound[:] = np.nan
+# neumann_bound[0] = 0  # set Neumann bound
+# model2d.add_neumann_boundary(neumann_bound)
 # %%
 def calc_laughlin_density(background_pot=None, momentum=None):
     """Calculate the electron density of laughlin state."""
@@ -60,12 +64,11 @@ charge_density = np.zeros_like(model2d.doping)
 elecgas_plate = (yv <= loc_2deg + eff_thickness / 2) * (
     yv >= loc_2deg - eff_thickness / 2)
 # %%
-charge_density[elecgas_plate] = -1.0 * ll_density(xv[elecgas_plate] -
-                                                  grid[0][-1] / 2)
+charge_density[elecgas_plate] = -1.0 * ll_density(xv[elecgas_plate])
 # %%
 # initialize Poisson solver
 poi_solver = PoissonFDM(grid, charge_density, model2d.eps,
-                        bound_dirichlet=model2d.bound_dirichlet, bound_period=model2d.bound_period)
+                        model2d.bound_dirichlet, model2d.bound_period, model2d.bound_neumann)
 # calculate Poisson equation by charge density
 potential = poi_solver.calc_poisson()
 e_field = poi_solver.e_field
@@ -102,5 +105,8 @@ plt.colorbar()
 plt.xlabel('Axis X(nm)')
 plt.ylabel('Axis Z(nm)')
 plt.show()
+
+# %%
+plt.plot(e_field[0][0])
 
 # %%
