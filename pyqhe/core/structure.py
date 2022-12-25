@@ -410,7 +410,7 @@ class Structure2D:
             dx: the minimum gap between grid point , unit in nanometer.
         """
 
-        num_gridpoint = round(self.stack_thick / delta)
+        num_gridpoint = round(self.stack_thick / delta) + 1
         # Generate a identity grid
         self._universal_grid, self.dim = self.generate_grid(num_gridpoint)
         eps = np.zeros(self.universal_grid[1].shape)
