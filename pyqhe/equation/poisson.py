@@ -178,7 +178,7 @@ class PoissonFDM(PoissonSolver):
                 bound_loc = np.nonzero(diff_b_vec)
                 b_vec[bound_loc] *= diff_b_vec[bound_loc]
 
-        # TODO: the following method need dual with normal direction of boundary
+        # TODO: the following method should consider the normal direction of boundary
         # if self.bound_neumann is not None:
         #     # the delta step for second-order accurate
         #     delta = self.grid[0][1] - self.grid[0][0]
