@@ -103,7 +103,8 @@ class SchrodingerPoisson:
         self.sch_solver = schsolver(self.grid,
                                     self.fi,
                                     self.cb_meff,
-                                    self.bound_period)
+                                    self.bound_period,
+                                    quantum_region)
         self.fermi_util = FermiStatistic(self.grid,
                                          self.cb_meff,
                                          self.doping)

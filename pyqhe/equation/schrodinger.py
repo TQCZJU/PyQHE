@@ -1,4 +1,5 @@
 # %%
+from functools import reduce
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 import numpy as np
@@ -151,7 +152,8 @@ class SchrodingerMatrix(SchrodingerSolver):
                  grid: Union[List[np.ndarray], np.ndarray],
                  v_potential: np.ndarray,
                  cb_meff: np.ndarray,
-                 bound_period: list = None) -> None:
+                 bound_period: list = None,
+                 quantum_region=None) -> None:
         super().__init__()
 
         if not isinstance(grid, list):  # 1d grid
@@ -167,7 +169,14 @@ class SchrodingerMatrix(SchrodingerSolver):
             self.cb_meff = cb_meff
         else:
             raise ValueError('The dimension of cb_meff is not match.')
-
+        if quantum_region is None:
+            self.quantum_region = [np.ones_like(grid) == 1 for grid in self.grid]
+        else:
+            if not isinstance(quantum_region, list):  # 1d grid
+                quantum_region = [quantum_region]
+            self.quantum_region = quantum_region
+        self.quantum_dim = [len(g[m]) for g, m in zip(self.grid, self.quantum_region)]
+        self.quantum_musk = reduce(np.outer, self.quantum_region).reshape(self.quantum_dim)
         if bound_period is None:
             self.bound_period = [None] * len(self.dim)
         elif len(bound_period) == len(self.dim):
@@ -183,20 +192,17 @@ class SchrodingerMatrix(SchrodingerSolver):
         Args:
             dim: dimension of kinetic operator.
         """
-        mat_d = -2 * np.eye(self.dim[loc]) + np.eye(
-            self.dim[loc], k=-1) + np.eye(self.dim[loc], k=1)
+        mat_d = -2 * np.eye(self.quantum_dim[loc]) + np.eye(
+            self.quantum_dim[loc], k=-1) + np.eye(self.quantum_dim[loc], k=1)
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
         return mat_d
 
-    def build_potential_operator(self, loc):
-        """Build 1D time independent Schrodinger equation potential operator.
+    def build_potential_operator(self):
+        """Build 1D time independent Schrodinger equation potential operator. """
 
-        Args:
-            dim: dimension of potential operator.
-        """
-        return np.diag(self.v_potential.flatten())
+        return np.diag(self.v_potential[self.quantum_musk].flatten())
 
     def hamiltonian(self):
         """Construct time independent Schrodinger equation."""
@@ -205,22 +211,23 @@ class SchrodingerMatrix(SchrodingerSolver):
         k_mat_list = []
         for loc, _ in enumerate(self.dim):
             mat = self.build_kinetic_operator(loc)
-            kron_list = [np.eye(idim) for idim in self.dim[:loc]] + [mat] + [
-                np.eye(idim) for idim in self.dim[loc + 1:]
+            kron_list = [np.eye(idim) for idim in self.quantum_dim[:loc]] + [mat] + [
+                np.eye(idim) for idim in self.quantum_dim[loc + 1:]
             ] + [1]  # auxiliary element for 1d solver
             delta = self.grid[loc][1] - self.grid[loc][0]
             # coeff = -0.5 * const.hbar**2 * self.cb_meff * self.beta**2 / delta**2
-            coeff = -0.5 * const.hbar**2 / self.cb_meff / delta**2
+            coeff = -0.5 * const.hbar**2 / self.cb_meff[self.quantum_musk].reshape(self.quantum_dim) / delta**2
             # construct n-d kinetic operator by tensor product
             k_opt = tensor(*kron_list)
             # tensor contraction
-            k_opt = np.einsum(k_opt.reshape(self.dim * 2),
-                              np.arange(len(self.dim * 2)), coeff,
-                              np.arange(len(self.dim)),
-                              np.arange(len(self.dim * 2)))
-            k_mat_list.append(k_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
+            k_opt = np.einsum(k_opt.reshape(self.quantum_dim * 2),
+                              np.arange(len(self.quantum_dim * 2)), coeff,
+                              np.arange(len(self.quantum_dim)),
+                              np.arange(len(self.quantum_dim * 2)))
+            k_mat_list.append(k_opt.reshape(np.prod(self.quantum_dim), np.prod(self.quantum_dim)))
+            # k_mat_list.append(k_opt / coeff)
         k_mat = np.sum(k_mat_list, axis=0)
-        v_mat = np.diag(self.v_potential.flatten())
+        v_mat = self.build_potential_operator()
 
         return k_mat + v_mat
 
@@ -237,11 +244,13 @@ class SchrodingerMatrix(SchrodingerSolver):
         #                     np.arange(len(self.dim * 2)), coeff,
         #                     np.arange(len(self.dim)),
         #                     np.arange(len(self.dim * 2)))
-        eig_vec = eig_vec.reshape(np.prod(self.dim), np.prod(self.dim))
+        eig_vec = eig_vec.reshape(np.prod(self.quantum_dim), np.prod(self.quantum_dim))
         # eig_vec = np.einsum('ij,i->ij', eig_vec, 1 / self.cb_meff / self.beta)
         wave_func = []
-        for vec in eig_vec.T:
+        for musk_vec in eig_vec.T:
             # reshape eigenvector to discrete wave function
+            vec = np.zeros(self.dim)
+            vec[self.quantum_musk] = musk_vec
             vec = vec.reshape(self.dim)
             # normalize
             norm = vec * np.conj(vec)
@@ -283,8 +292,9 @@ if __name__ == '__main__':
     v_potential = np.ones(grid.shape)
     # Quantum well
     v_potential[40:61] = 0
+    quantum_region = (grid < 5) * (grid > 4)
     cb_meff = np.ones(grid.shape) * const.m_e
-    solver = SchrodingerMatrix(grid, v_potential, cb_meff)
+    solver = SchrodingerMatrix(grid, v_potential, cb_meff, quantum_region=quantum_region)
     val, vec = solver.calc_esys()
     plt.plot(solver.grid[0], solver.v_potential)
     plt.plot(solver.grid[0], vec[:3].T)

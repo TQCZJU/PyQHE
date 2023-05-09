@@ -455,6 +455,7 @@ class Structure3D:
                  temp=0.01,
                  spline_storage=False,
                  bound_period=None,
+                 bound_neumann=None,
                  **kwargs) -> None:
 
         self.layers = layer_list
@@ -470,6 +471,12 @@ class Structure3D:
         self._universal_grid = None
         self.dim = None
         self.bound_dirichlet = None
+        self.bound_neumann = None
+
+        if bound_neumann is not None and len(bound_neumann) == 3:
+            self.bound_neumann = bound_neumann
+        else:
+            self.bound_neumann = [None] * 3
         if bound_period is not None and len(bound_period) == 3:
             self.bound_period = bound_period
         else:
@@ -528,7 +535,7 @@ class Structure3D:
             dx: the minimum gap between grid point , unit in nanometer.
         """
 
-        num_gridpoint = round(self.stack_thick / delta)
+        num_gridpoint = round(self.stack_thick / delta) + 1
         # Generate a identity grid
         self._universal_grid, self.dim = self.generate_grid(num_gridpoint)
         eps = np.zeros(self.universal_grid[-1].shape)
