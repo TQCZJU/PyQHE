@@ -6,6 +6,7 @@ from pyqhe.equation.schrodinger import SchrodingerMatrix, SchrodingerSolver, Sch
 from pyqhe.equation.poisson import PoissonSolver, PoissonODE, PoissonFDM
 from pyqhe.utility.fermi import FermiStatistic
 from pyqhe.core.structure import Structure2D
+from pyqhe.utility.constant import const
 
 
 class OptimizeResult:
@@ -89,6 +90,7 @@ class SchrodingerPoisson:
         self.grid = model.universal_grid
         # load boundary condition
         self.bound_dirichlet = model.bound_dirichlet
+        self.bound_neumann = model.bound_neumann
         # Load period boundary condition
         self.bound_period = model.bound_period
         # Setup Quantum region
@@ -110,7 +112,8 @@ class SchrodingerPoisson:
                                          self.doping)
         self.poi_solver = poisolver(self.grid, self.doping, self.eps,
                                     self.bound_dirichlet,
-                                    self.bound_period)
+                                    self.bound_period,
+                                    self.bound_neumann)
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:
@@ -155,7 +158,7 @@ class SchrodingerPoisson:
         # calculate the net charge density
         sigma = self._calc_net_density(n_states, wave_func)
         # perform poisson solver
-        self.poi_solver.charge_density = sigma
+        self.poi_solver.charge_density = sigma * const.e
         params = self.poi_solver.calc_poisson()
         # return eigenenergy loss
         loss = np.abs(self.eig_val[0] - eig_val[0])
@@ -205,7 +208,7 @@ class SchrodingerPoisson:
             new_wf = wf
             full_wave_function.append(new_wf)
         res.wave_function = np.asarray(full_wave_function)
-        self.poi_solver.charge_density = res.sigma
+        self.poi_solver.charge_density = res.sigma * const.e
         self.poi_solver.calc_poisson()
         res.e_field = self.poi_solver.e_field
         # Accumulate electron areal density in the subbands

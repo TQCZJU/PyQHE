@@ -6,7 +6,7 @@ import numpy as np
 import scipy.linalg as sciLA
 from scipy import optimize
 
-import pyqhe.utility.constant as const
+from pyqhe.utility.constant import const
 from pyqhe.utility.utils import tensor
 
 

@@ -3,7 +3,7 @@ import numpy as np
 from scipy.integrate import cumulative_trapezoid
 from scipy.linalg import solve
 
-import pyqhe.utility.constant as const
+from pyqhe.utility.constant import const
 from pyqhe.utility.utils import tensor
 
 
@@ -45,7 +45,7 @@ class PoissonODE(PoissonSolver):
     def calc_poisson(self, **kwargs):
         """Calculate electric field."""
         # Gauss's law
-        d_z = cumulative_trapezoid(const.q * self.charge_density,
+        d_z = cumulative_trapezoid(self.charge_density,
                                    self.grid,
                                    initial=0)
         self.e_field = d_z / self.eps
@@ -139,6 +139,11 @@ class PoissonFDM(PoissonSolver):
             bound_a[0] = -delta
             bound_a[1] = delta
             mat_d[0] = bound_a
+            # note each axis should has two Neumann boundary
+            # bound_b = np.zeros(self.dim[loc])
+            # bound_b[-2] = delta
+            # bound_b[-1] = -delta
+            # mat_d[-1] = bound_b
         return mat_d
 
     def calc_poisson(self, **kwargs):
@@ -163,13 +168,14 @@ class PoissonFDM(PoissonSolver):
             a_mat_list.append(
                 d_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
         a_mat = np.sum(a_mat_list, axis=0)
-        b_vec = -1.0 * const.q * self.charge_density.flatten()
+        b_vec = -1.0 * self.charge_density.flatten()
 
         # add Neumann boundary condition with second order accurate method
         for loc, _ in enumerate(self.dim):
             if self.bound_neumann[loc]:  # now adjust b_vec for Neumann boundary
                 kernel_vec = np.zeros(self.dim[loc])
                 kernel_vec[0] = 0.5 * delta
+                # kernel_vec[-1] = 0.5 * delta
                 kron_list = [np.ones(idim) for idim in self.dim[:loc]] + [
                     kernel_vec
                 ] + [np.ones(idim) for idim in self.dim[loc + 1:]
@@ -217,8 +223,9 @@ if __name__ == '__main__':
     grid = np.linspace(0, 10, 80)
     eps = np.ones(grid.shape) * const.eps0
     sigma = np.zeros(grid.shape)
-    sigma[30:41] = -1
-    sigma[60:71] = 1
+    sigma[20:31] = 1
+    # sigma[40:51] = 1
+    sigma[50:61] = 1
     sol = PoissonFDM(grid, sigma, eps)
     sol.calc_poisson()
 

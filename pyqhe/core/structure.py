@@ -3,7 +3,7 @@ from typing import List
 import numpy as np
 from scipy.interpolate import interp1d, CubicSpline
 
-import pyqhe.utility.constant as const
+from pyqhe.utility.constant import const
 
 
 class SplineStorage:
@@ -217,6 +217,7 @@ class Structure1D:
                  temp=0.01,
                  spline_storage=False,
                  bound_period=None,
+                 bound_neumann=None,
                  **kwargs) -> None:
 
         self.layers = layer_list
@@ -233,6 +234,10 @@ class Structure1D:
             self.bound_period = bound_period
         else:
             self.bound_period = [None]
+        if bound_neumann is not None and len(bound_neumann) == 1:
+            self.bound_neumann = bound_neumann
+        else:
+            self.bound_neumann = [None]
         # Structure's properties
         self.temp = temp
         self.fi = None

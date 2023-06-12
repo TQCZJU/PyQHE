@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import optimize
 
-import pyqhe.utility.constant as const
+from pyqhe.utility.constant import const
 
 
 class FermiStatistic:
