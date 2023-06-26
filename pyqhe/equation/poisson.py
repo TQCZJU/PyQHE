@@ -140,10 +140,10 @@ class PoissonFDM(PoissonSolver):
             bound_a[1] = delta
             mat_d[0] = bound_a
             # note each axis should has two Neumann boundary
-            # bound_b = np.zeros(self.dim[loc])
-            # bound_b[-2] = delta
-            # bound_b[-1] = -delta
-            # mat_d[-1] = bound_b
+            bound_b = np.zeros(self.dim[loc])
+            bound_b[-1] = -delta
+            bound_b[-2] = delta
+            mat_d[-1] = bound_b
         return mat_d
 
     def calc_poisson(self, **kwargs):
@@ -175,7 +175,8 @@ class PoissonFDM(PoissonSolver):
             if self.bound_neumann[loc]:  # now adjust b_vec for Neumann boundary
                 kernel_vec = np.zeros(self.dim[loc])
                 kernel_vec[0] = 0.5 * delta
-                # kernel_vec[-1] = 0.5 * delta
+                # add another Neumann boundary in axis
+                kernel_vec[-1] = 0.5 * delta
                 kron_list = [np.ones(idim) for idim in self.dim[:loc]] + [
                     kernel_vec
                 ] + [np.ones(idim) for idim in self.dim[loc + 1:]
@@ -221,11 +222,11 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
     grid = np.linspace(0, 10, 80)
-    eps = np.ones(grid.shape) * const.eps0
+    eps = np.ones(grid.shape)
     sigma = np.zeros(grid.shape)
-    sigma[20:31] = 1
+    sigma[19:25] = 2
     # sigma[40:51] = 1
-    sigma[50:61] = 1
+    sigma[55:61] = 2
     sol = PoissonFDM(grid, sigma, eps)
     sol.calc_poisson()
 

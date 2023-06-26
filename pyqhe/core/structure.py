@@ -117,8 +117,7 @@ class Layer:
         }
 
         self.AlAs = {
-            # 'm_e': 0.15,
-            'm_e': 0.067,
+            'm_e': 0.15,
             'm_hh': 0.51,
             'm_lh': 0.18,
             'epsilonStatic': 10.06,

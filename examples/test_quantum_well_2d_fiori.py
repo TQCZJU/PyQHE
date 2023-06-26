@@ -22,7 +22,12 @@ def calc_omega(thickness=10, tol=5e-5):
     layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
     layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))
 
-    model = Structure2D(layer_list, width=50, temp=10, delta=1)
+    model = Structure2D(layer_list,
+                        width=50,
+                        temp=10,
+                        delta=1,
+                        bound_neumann=[True, False],
+                        bound_period=None)
     # add boundary condition
     grid = model.universal_grid
     delta = grid[0][1] - grid[0][0]
@@ -34,7 +39,7 @@ def calc_omega(thickness=10, tol=5e-5):
     bound[:] = np.nan
     bound[top_plate * plate_length] = -0.02  # meV
     # bound[bottom_plate] = 0
-    model.add_dirichlet_boundary(bound)
+    # model.add_dirichlet_boundary(bound)
     # instance of class SchrodingerPoisson
     schpois = FioriPoisson(
         model,

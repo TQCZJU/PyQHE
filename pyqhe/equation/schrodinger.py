@@ -228,10 +228,12 @@ class SchrodingerMatrix(SchrodingerSolver):
             # construct n-d kinetic operator by tensor product
             k_opt = tensor(*kron_list)
             # tensor contraction
-            k_opt = np.einsum(k_opt.reshape(self.quantum_dim * 2),
-                              np.arange(len(self.quantum_dim * 2)), coeff,
-                              np.arange(len(self.quantum_dim)),
-                              np.arange(len(self.quantum_dim * 2)))
+            #TODO: the PDEM method looks broken
+            # k_opt = np.einsum(k_opt.reshape(self.quantum_dim * 2),
+            #                   np.arange(len(self.quantum_dim * 2)), coeff,
+            #                   np.arange(len(self.quantum_dim)),
+            #                   np.arange(len(self.quantum_dim * 2)))
+            k_opt = k_opt * np.min(coeff)  # quantum well has the smallest m_e
             k_mat_list.append(
                 k_opt.reshape(np.prod(self.quantum_dim),
                               np.prod(self.quantum_dim)))
