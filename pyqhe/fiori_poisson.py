@@ -111,8 +111,8 @@ class FioriPoisson:
                                     self.bound_period,
                                     quantum_region)
         self.fermi_util = FermiStatistic(self.grid[-1],
-                                         self.cb_meff[-1],
-                                         self.doping[-1])
+                                         self.cb_meff.reshape(-1, len(self.grid[-1]))[-1],
+                                         self.doping.reshape(-1, len(self.grid[-1]))[-1])
         self.poi_solver = poisolver(self.grid, self.doping, self.eps,
                                     self.bound_dirichlet,
                                     self.bound_period,
@@ -157,7 +157,12 @@ class FioriPoisson:
         self.sch_solver.v_potential = v_potential
         eig_val, wave_func = self.sch_solver.calc_esys()
         # calculate energy band distribution
-        _, n_states = self.fermi_util.fermilevel(eig_val[:, 0], wave_func[:, 0, :], self.temp)
+        if wave_func.ndim == 3:
+            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0], wave_func[:, 0, :], self.temp)
+        elif wave_func.ndim == 4:
+            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0, 0], wave_func[:, 0, 0, :], self.temp)
+        else:
+            raise ValueError('Unsupported wave function.')
         # calculate the net charge density
         sigma = self._calc_net_density(n_states, wave_func)
         #TODO: we need specific net density calculator in different regime(IQHE, FQHE)
@@ -203,8 +208,14 @@ class FioriPoisson:
         # reclaim convergence result
         self.sch_solver.v_potential = res.v_potential
         res.eig_val, res.wave_function = self.sch_solver.calc_esys()
-        res.fermi_energy, res.n_states = self.fermi_util.fermilevel(
-            res.eig_val[:, 0], res.wave_function[:, 0, :], self.temp)
+        if res.wave_function.ndim == 3:
+            res.fermi_energy, res.n_states = self.fermi_util.fermilevel(
+                res.eig_val[:, 0], res.wave_function[:, 0, :], self.temp)
+        elif res.wave_function.ndim == 4:
+            res.fermi_energy, res.n_states = self.fermi_util.fermilevel(
+                res.eig_val[:, 0, 0], res.wave_function[:, 0, 0, :], self.temp)
+        else:
+            raise ValueError('Unsupported wave function.')
         res.sigma = self._calc_net_density(res.n_states, res.wave_function)
         # full wave function
         res.wave_function = np.asarray(res.wave_function)
