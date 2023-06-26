@@ -371,7 +371,9 @@ class SchrodingerFiori(SchrodingerSolver):
         # reshape the set of eigensystems
         # the multi-dimension index of eigval_set is [lateral_idx0, lateral_idx1, i-th eigenval]
         eigval_set = np.array(eigval_set).reshape(self.dim)
-
+        # swap axis to unify tensor definition [i-th eigenvec, lateral_idx0, lateral_idx1, growth axis]
+        for i in range(len(self.dim), 1, -1):
+            eigval_set = np.swapaxes(eigval_set, i - 1, i - 2)
         return eigval_set
 
     def calc_esys(self):
@@ -403,7 +405,10 @@ class SchrodingerFiori(SchrodingerSolver):
         wave_func_set = np.array(wave_func_set).reshape(self.dim + [
             self.dim[-1],
         ])
-
+        # swap axis to unify tensor definition [i-th eigenvec, lateral_idx0, lateral_idx1, growth axis]
+        for i in range(len(self.dim), 1, -1):
+            eigval_set = np.swapaxes(eigval_set, i - 1, i - 2)
+            wave_func_set = np.swapaxes(wave_func_set, i - 1, i - 2)
         return eigval_set, wave_func_set
 
 
@@ -413,12 +418,12 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from matplotlib import cm
 
-    x = np.linspace(-1, 1, 20)
-    y = np.linspace(-1, 1, 30)
-    z = np.linspace(-1, 1, 100)
+    x = np.linspace(-1, 1, 5)
+    y = np.linspace(-1, 1, 20)
+    z = np.linspace(-1, 1, 30)
     xv, yv, zv = np.meshgrid(x, y, z, indexing='ij')
     z_barrier = (zv <= -0.5) + (zv >= 0.5)
-    v_potential = np.zeros([20, 30, 100])
+    v_potential = np.zeros([5, 20, 30])
     v_potential[z_barrier] = 10  # set barrier
     sol = SchrodingerFiori([x, y, z], v_potential,
                            np.ones_like(v_potential) * const.m_e)
@@ -426,11 +431,11 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     surf = ax.plot_surface(yv[0],
                            zv[0],
-                           wf[0, :, 2, :],
+                           wf[2, 2, :],
                            cmap=cm.coolwarm,
                            linewidth=0,
                            antialiased=False)
-    ax.set_xlabel('x')
+    ax.set_xlabel('y')
     ax.set_ylabel('z')
     ax.set_zlabel(r'$\psi(r,z)$')
     # %%

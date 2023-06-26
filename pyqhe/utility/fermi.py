@@ -66,6 +66,7 @@ class FermiStatistic:
                 (i + 1))  # for 2des rho(e) related to e
         estimate_fermi_energy = np.array(estimate_fermi_energy)
         # check true Fermi energy
+        # each batch has its own fermi energy, we may need to follow Manfra's way
         fermi_idx = np.argwhere((estimate_fermi_energy - eig_val) < 0)
         if fermi_idx.size == 0:
             raise ValueError(
