@@ -236,7 +236,7 @@ class Structure1D:
         if bound_neumann is not None and len(bound_neumann) == 1:
             self.bound_neumann = bound_neumann
         else:
-            self.bound_neumann = [None]
+            self.bound_neumann = [[None] * 2]
         # Structure's properties
         self.temp = temp
         self.fi = None
@@ -354,7 +354,7 @@ class Structure2D:
         if bound_neumann is not None and len(bound_neumann) == 2:
             self.bound_neumann = bound_neumann
         else:
-            self.bound_neumann = [None] * 2
+            self.bound_neumann = [[None] * 2] * 2
 
         if bound_period is not None and len(bound_period) == 2:
             self.bound_period = bound_period
@@ -480,7 +480,7 @@ class Structure3D:
         if bound_neumann is not None and len(bound_neumann) == 3:
             self.bound_neumann = bound_neumann
         else:
-            self.bound_neumann = [None] * 3
+            self.bound_neumann = [[None] * 2] * 3
         if bound_period is not None and len(bound_period) == 3:
             self.bound_period = bound_period
         else:

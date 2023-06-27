@@ -107,7 +107,7 @@ class PoissonFDM(PoissonSolver):
         # noted the above method should consider normal direction carefully
 
         if bound_neumann is None:
-            self.bound_neumann = [None] * len(self.dim)
+            self.bound_neumann = [[None] * 2] * len(self.dim)
         elif len(bound_neumann) == len(self.dim):
             self.bound_neumann = bound_neumann
         else:
@@ -132,14 +132,16 @@ class PoissonFDM(PoissonSolver):
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
 
-        if self.bound_neumann[loc]:  # add Neumann boundary condition
+        if self.bound_neumann[loc][0]:  # add Neumann boundary condition
             delta = self.grid[loc][1] - self.grid[loc][0]
             bound_a = np.zeros(self.dim[loc])
             # set matrix element
             bound_a[0] = -delta
             bound_a[1] = delta
             mat_d[0] = bound_a
+        if self.bound_neumann[loc][1]:
             # note each axis should has two Neumann boundary
+            delta = self.grid[loc][1] - self.grid[loc][0]
             bound_b = np.zeros(self.dim[loc])
             bound_b[-1] = -delta
             bound_b[-2] = delta
@@ -172,11 +174,13 @@ class PoissonFDM(PoissonSolver):
 
         # add Neumann boundary condition with second order accurate method
         for loc, _ in enumerate(self.dim):
-            if self.bound_neumann[loc]:  # now adjust b_vec for Neumann boundary
+            if any(self.bound_neumann[loc]):  # now adjust b_vec for Neumann boundary
                 kernel_vec = np.zeros(self.dim[loc])
-                kernel_vec[0] = 0.5 * delta
+                if self.bound_neumann[loc][0]:
+                    kernel_vec[0] = 0.5 * delta
                 # add another Neumann boundary in axis
-                kernel_vec[-1] = 0.5 * delta
+                if self.bound_neumann[loc][1]:
+                    kernel_vec[-1] = 0.5 * delta
                 kron_list = [np.ones(idim) for idim in self.dim[:loc]] + [
                     kernel_vec
                 ] + [np.ones(idim) for idim in self.dim[loc + 1:]
@@ -212,7 +216,7 @@ class PoissonFDM(PoissonSolver):
             b_vec[bound_loc] = bound_b.flatten()[bound_loc]
         self.v_potential = solve(a_mat, b_vec).reshape(self.dim)
         # calculate gradient of potential
-        self.e_field = np.gradient(-1.0 * self.v_potential)
+        self.e_field = np.gradient(-1.0 * self.v_potential, *self.grid)
         return self.v_potential
 
 
@@ -221,13 +225,13 @@ class PoissonFDM(PoissonSolver):
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    grid = np.linspace(0, 10, 80)
+    grid = np.linspace(0, 1, 80)
     eps = np.ones(grid.shape)
     sigma = np.zeros(grid.shape)
-    sigma[19:25] = 2
+    sigma[20:31] = 1
     # sigma[40:51] = 1
-    sigma[55:61] = 2
-    sol = PoissonFDM(grid, sigma, eps)
+    sigma[50:61] = 1
+    sol = PoissonFDM(grid, sigma, eps, bound_neumann=[[True, False]])
     sol.calc_poisson()
 
     plt.plot(grid, sol.v_potential)

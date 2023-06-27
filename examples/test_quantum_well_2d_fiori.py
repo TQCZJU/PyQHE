@@ -26,7 +26,7 @@ def calc_omega(thickness=10, tol=5e-5):
                         width=50,
                         temp=10,
                         delta=1,
-                        bound_neumann=[True, False],
+                        bound_neumann=[[True, True], [False, False]],
                         bound_period=None)
     # add boundary condition
     grid = model.universal_grid

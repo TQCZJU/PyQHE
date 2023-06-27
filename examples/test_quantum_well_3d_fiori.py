@@ -27,7 +27,7 @@ def calc_omega(thickness=10, tol=5e-5):
                         width=10,
                         temp=10,
                         delta=1,
-                        bound_neumann=[True, True, False])
+                        bound_neumann=[[True, True], [True, True], [False, False]])
     # instance of class SchrodingerPoisson
     schpois = FioriPoisson(
         model,
