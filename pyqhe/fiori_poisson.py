@@ -18,6 +18,7 @@ class OptimizeResult:
     def __init__(self) -> None:
         # Storage of grid configure
         self.grid = None
+        self.dim = None
         # Optimizer result
         self.repulsive = None
         # Fermi Statistic
@@ -91,6 +92,7 @@ class FioriPoisson:
         self.doping = model.doping  # doping profile
         # load grid configure
         self.grid = model.universal_grid
+        self.dim = [grid_axis.shape[0] for grid_axis in self.grid]
         # load boundary condition
         self.bound_dirichlet = model.bound_dirichlet
         self.bound_neumann = model.bound_neumann
@@ -170,7 +172,7 @@ class FioriPoisson:
         self.poi_solver.charge_density = sigma * const.e
         repulsive = self.poi_solver.calc_poisson()
         # return eigenenergy loss
-        loss = np.sum(np.abs(self.eig_val[0] - eig_val[0]))
+        loss = np.mean(np.abs(self.eig_val[0] - eig_val[0]))
         self.eig_val = eig_val
 
         return loss, repulsive
@@ -197,6 +199,7 @@ class FioriPoisson:
             # self-consistent update repulsive
             self.repulsive += (temp_repulsive - self.repulsive) * learning_rate
             if i and loss < tol:
+                print('Self-Consistent!')
                 break
         # save optimize result
         # optimal_index = np.argmin(loss_list[1:])
@@ -204,6 +207,7 @@ class FioriPoisson:
         res = OptimizeResult()
         res.repulsive = self.repulsive
         res.grid = self.grid
+        res.dim = self.dim
         res.v_potential = self.repulsive + self.fi
         # reclaim convergence result
         self.sch_solver.v_potential = res.v_potential
