@@ -1,7 +1,11 @@
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
+from functools import reduce
+import warnings
+
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
-from scipy.linalg import solve
+import scipy.sparse as sp
+from scipy.sparse.linalg import spsolve
 
 from pyqhe.utility.constant import const
 from pyqhe.utility.utils import tensor
@@ -45,9 +49,7 @@ class PoissonODE(PoissonSolver):
     def calc_poisson(self, **kwargs):
         """Calculate electric field."""
         # Gauss's law
-        d_z = cumulative_trapezoid(self.charge_density,
-                                   self.grid,
-                                   initial=0)
+        d_z = cumulative_trapezoid(self.charge_density, self.grid, initial=0)
         self.e_field = d_z / self.eps
         # integral the potential
         # note here we put a electron, dV/dz = E
@@ -59,11 +61,23 @@ class PoissonODE(PoissonSolver):
 
 
 class PoissonFDM(PoissonSolver):
-    """ODE integration solver for 1d Poisson equation.
+    """Finite difference method solver for nd Poisson equation.
 
     Args:
-        charge_density: The net charge density. Typically, use the dopants
-            density minus the electron density.
+        grid: list of array
+            the grid for FDM
+        charge_density: 2d-array
+        eps: 2d-array
+            the electric permittivity
+        bound_dirichlet: 2d-array
+            the matrix contains information about the dirichlet boundary,
+            set np.nan to non-boundary points.
+        bound_period: list of bool
+            true for set the period boundary condition at the edge of the
+            simulation area
+        bound_neumann: list of list of bool
+            true for set the neumann boundary condition `dV/dn=const` at the
+            edges of the simulation area
     """
 
     def __init__(
@@ -98,6 +112,7 @@ class PoissonFDM(PoissonSolver):
         else:
             raise ValueError('The dimension of bound_dirichlet is not match.')
 
+        # Deprecated(We only need to assign Neumann boundary on both sides)
         # if bound_neumann is None:
         #     self.bound_neumann = None
         # elif bound_neumann.shape == tuple(self.dim) or len(self.dim) == 1:
@@ -126,8 +141,10 @@ class PoissonFDM(PoissonSolver):
         Args:
             dim: dimension of kinetic operator.
         """
-        mat_d = -2 * np.eye(self.dim[loc]) + np.eye(
-            self.dim[loc], k=-1) + np.eye(self.dim[loc], k=1)
+        mat_d = sp.diags([
+            np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
+            np.ones(self.dim[loc] - 1)
+        ], [-1, 0, 1], format='csr')
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
@@ -156,25 +173,27 @@ class PoissonFDM(PoissonSolver):
 
         for loc, _ in enumerate(self.dim):
             mat = self.build_d_matrix(loc)
-            kron_list = [np.eye(idim) for idim in self.dim[:loc]] + [mat] + [
-                np.eye(idim) for idim in self.dim[loc + 1:]
-            ] + [1]  # auxiliary element for 1d solver
             delta = self.grid[loc][1] - self.grid[loc][0]
-            # construct n-d kinetic operator by tensor product
-            d_opt = tensor(*kron_list)
-            # tensor contraction
-            d_opt = np.einsum(d_opt.reshape(self.dim * 2),
-                              np.arange(len(self.dim * 2)), self.eps / delta**2,
-                              np.arange(len(self.dim)),
-                              np.arange(len(self.dim * 2)))
-            a_mat_list.append(
-                d_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
-        a_mat = np.sum(a_mat_list, axis=0)
+            # assume all elements of `self.eps` are same
+            eps = self.eps.flatten()[0]
+            a_mat_list.append(mat * eps / delta**2)
+            # # construct n-d kinetic operator by tensor product
+            # d_opt = tensor(*kron_list)
+            # # tensor contraction
+            # d_opt = np.einsum(d_opt.reshape(self.dim * 2),
+            #                   np.arange(len(self.dim * 2)), self.eps / delta**2,
+            #                   np.arange(len(self.dim)),
+            #                   np.arange(len(self.dim * 2)))
+            # a_mat_list.append(
+            #     d_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
+
+        a_mat = reduce(sp.kronsum, a_mat_list[::-1])
         b_vec = -1.0 * self.charge_density.flatten()
 
         # add Neumann boundary condition with second order accurate method
         for loc, _ in enumerate(self.dim):
-            if any(self.bound_neumann[loc]):  # now adjust b_vec for Neumann boundary
+            if any(self.bound_neumann[loc]
+                  ):  # now adjust b_vec for Neumann boundary
                 kernel_vec = np.zeros(self.dim[loc])
                 if self.bound_neumann[loc][0]:
                     kernel_vec[0] = 0.5 * delta
@@ -190,6 +209,7 @@ class PoissonFDM(PoissonSolver):
                 b_vec[bound_loc] *= diff_b_vec[bound_loc]
 
         # TODO: the following method should consider the normal direction of boundary
+        # Deprecated(We only need to assign Neumann boundary on both sides)
         # if self.bound_neumann is not None:
         #     # the delta step for second-order accurate
         #     delta = self.grid[0][1] - self.grid[0][0]
@@ -205,7 +225,7 @@ class PoissonFDM(PoissonSolver):
         if self.bound_dirichlet is not None:
             # set temporary coefficient delta
             delta = self.grid[0][1] - self.grid[0][0]
-            # adjust coefficient let matrix looks good
+            # adjust coefficient let matrix match the LAPACK's requirement
             bound_b = self.bound_dirichlet * self.eps / delta**2
             bound_a = np.zeros_like(b_vec)
             bound_loc = np.flatnonzero(~np.isnan(self.bound_dirichlet))
@@ -214,10 +234,77 @@ class PoissonFDM(PoissonSolver):
             bound_mat = np.diag(bound_a)
             a_mat[bound_loc] = bound_mat[bound_loc]
             b_vec[bound_loc] = bound_b.flatten()[bound_loc]
-        self.v_potential = solve(a_mat, b_vec).reshape(self.dim)
+        # call the LAPACK
+        self.v_potential = spsolve(a_mat, b_vec).reshape(self.dim)
         # calculate gradient of potential
         self.e_field = np.gradient(-1.0 * self.v_potential, *self.grid)
         return self.v_potential
+
+
+class PoissonFDMCircular(PoissonFDM):
+    """Finite difference method solver for quasi-3d Poisson equation.
+    Circular symmetry help the solver reduce 3d equation to 2d.
+    We assume the symmetry axis parallel to growth axis.
+
+    Args:
+        grid: list of array
+            the grid for FDM
+        charge_density: 2d-array
+        eps: 2d-array
+            the electric permittivity
+        bound_dirichlet: 2d-array
+            the matrix contains information about the dirichlet boundary,
+            set np.nan to non-boundary points.
+        bound_period: list of bool
+            true for set the period boundary condition at the edge of the
+            simulation area
+        bound_neumann: list of list of bool
+            true for set the neumann boundary condition `dV/dn=const` at the
+            edges of the simulation area. Noted symmetry axis(left edge) must be set
+    """
+    def build_d_matrix(self, loc):
+        """Build 1D time independent Schrodinger equation kinetic operator.
+
+        Args:
+            dim: dimension of kinetic operator.
+        """
+        if loc == 0:  # lateral axis
+            coeff_p1 = 1 + 1 / (2 * np.arange(0, self.dim[loc] - 1))
+            coeff_p1[0] = 1.5
+            coeff_m1 = 1 - 1 / (2 * np.arange(1, self.dim[loc]))
+            mat_d = sp.diags([coeff_m1, -2 * np.ones(self.dim[loc]), coeff_p1],
+                             [-1, 0, 1],
+                             format='csr')
+        else:  # growth axis
+            mat_d = sp.diags([
+                np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
+                np.ones(self.dim[loc] - 1)
+            ], [-1, 0, 1], format='csr')
+
+        if self.bound_period[loc]:  # add period boundary condition
+            mat_d[0, -1] = 1
+            mat_d[-1, 0] = 1
+
+        # check left edge status
+        if not self.bound_neumann[0][0]:
+            warnings.warn('Left Neumann boundary must be set.')
+            self.bound_neumann[0][0] = True
+
+        if self.bound_neumann[loc][0]:  # add Neumann boundary condition
+            delta = self.grid[loc][1] - self.grid[loc][0]
+            bound_a = np.zeros(self.dim[loc])
+            # set matrix element
+            bound_a[0] = -delta
+            bound_a[1] = delta
+            mat_d[0] = bound_a
+        if self.bound_neumann[loc][1]:
+            # note each axis should has two Neumann boundary
+            delta = self.grid[loc][1] - self.grid[loc][0]
+            bound_b = np.zeros(self.dim[loc])
+            bound_b[-1] = -delta
+            bound_b[-2] = delta
+            mat_d[-1] = bound_b
+        return mat_d
 
 
 # %%
@@ -243,7 +330,7 @@ if __name__ == '__main__':
     y = np.arange(-0.5, 0.5, delta)
     xv, yv = np.meshgrid(x, y, indexing='ij')
     top_plate = (yv <= 0.1 + delta / 2) * (yv >= 0.1 - delta / 2)
-    bottom_plate = (yv <= -0.1 + delta /2) * (yv >= -0.1 -delta / 2)
+    bottom_plate = (yv <= -0.1 + delta / 2) * (yv >= -0.1 - delta / 2)
     length = (xv <= 0.5) * (xv >= -0.5)
     bound = np.empty_like(xv)
     bound[:] = np.nan
