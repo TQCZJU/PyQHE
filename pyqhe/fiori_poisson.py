@@ -98,6 +98,8 @@ class FioriPoisson:
         self.bound_neumann = model.bound_neumann
         # Load period boundary condition
         self.bound_period = model.bound_period
+        # Load rotational symmetry
+        self.rotational_symmetry = model.rotational_symmetry
         # Setup Quantum region
         # if quantum_region is not None and len(quantum_region) == 2:
         #     self.quantum_mask = (self.grid > quantum_region[0]) * (
@@ -118,7 +120,8 @@ class FioriPoisson:
         self.poi_solver = poisolver(self.grid, self.doping, self.eps,
                                     self.bound_dirichlet,
                                     self.bound_period,
-                                    self.bound_neumann)
+                                    self.bound_neumann,
+                                    self.rotational_symmetry)
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:

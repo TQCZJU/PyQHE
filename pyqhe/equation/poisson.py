@@ -88,6 +88,7 @@ class PoissonFDM(PoissonSolver):
         bound_dirichlet: np.ndarray = None,
         bound_period: list = None,
         bound_neumann: np.ndarray = None,
+        rotational_symmetry: list = None
     ) -> None:
         super().__init__()
 
@@ -135,16 +136,31 @@ class PoissonFDM(PoissonSolver):
         else:
             raise ValueError('The dimension of bound_period is not match.')
 
+        if rotational_symmetry is None:
+            self.rotational_symmetry = [None] * len(self.dim)
+        elif len(rotational_symmetry) == len(self.dim):
+            self.rotational_symmetry = rotational_symmetry
+        else:
+            raise ValueError('The dimension of rotational_symmetry is not match.')
+
     def build_d_matrix(self, loc):
         """Build 1D time independent Schrodinger equation kinetic operator.
 
         Args:
             dim: dimension of kinetic operator.
         """
-        mat_d = sp.diags([
-            np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
-            np.ones(self.dim[loc] - 1)
-        ], [-1, 0, 1], format='csr')
+        if self.rotational_symmetry[loc]:
+            coeff_p1 = 1 + 1 / (2 * np.arange(0, self.dim[loc] - 1))
+            coeff_p1[0] = 1.5
+            coeff_m1 = 1 - 1 / (2 * np.arange(1, self.dim[loc]))
+            mat_d = sp.diags([coeff_m1, -2 * np.ones(self.dim[loc]), coeff_p1],
+                             [-1, 0, 1],
+                             format='csr')
+        else:
+            mat_d = sp.diags([
+                np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
+                np.ones(self.dim[loc] - 1)
+            ], [-1, 0, 1], format='csr')
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1

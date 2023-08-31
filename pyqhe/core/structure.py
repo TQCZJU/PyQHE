@@ -335,6 +335,7 @@ class Structure2D:
                  spline_storage=False,
                  bound_period=None,
                  bound_neumann=None,
+                 rotational_symmetry=None,
                  **kwargs) -> None:
 
         self.layers = layer_list
@@ -360,6 +361,11 @@ class Structure2D:
             self.bound_period = bound_period
         else:
             self.bound_period = [None] * 2
+
+        if rotational_symmetry is not None and len(rotational_symmetry) == 2:
+            self.rotational_symmetry = rotational_symmetry
+        else:
+            self.rotational_symmetry = [None] * 2
         # Structure's properties
         self.temp = temp
         self.fi = None
