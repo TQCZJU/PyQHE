@@ -51,7 +51,7 @@ setup(
     classifiers=classifiers,
     packages=find_packages(),
     install_requires=[
-          'numpy', 'scipy', 'matplotlib'
+          'numpy', 'scipy', 'matplotlib', 'qutip'
       ],
     include_package_data=True
 )

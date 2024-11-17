@@ -198,12 +198,39 @@ class SchrodingerMatrix(SchrodingerSolver):
         Args:
             dim: dimension of kinetic operator.
         """
-        mat_d = -2 * np.eye(self.quantum_dim[loc]) + np.eye(
-            self.quantum_dim[loc], k=-1) + np.eye(self.quantum_dim[loc], k=1)
+        delta = self.grid[loc][1] - self.grid[loc][0]
+        mat_d = self.build_second_order_differential_operator(loc)
+        pdem_mat = self.builf_first_order_differential_operator(loc)
+        mat_d = (mat_d - pdem_mat) / delta**2
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
         return mat_d
+
+    def build_second_order_differential_operator(self, loc):
+        """Build 1D time independent Schrodinger equation second order
+        differential operator.
+
+        Args:
+            loc: index of grid axis.
+        """
+        mat_d = -2 * np.eye(self.quantum_dim[loc]) + np.eye(
+            self.quantum_dim[loc], k=-1) + np.eye(self.quantum_dim[loc], k=1)
+        return mat_d
+
+    def builf_first_order_differential_operator(self, loc):
+        """Build 1D time independent Schrodinger equation first order
+        differential operator.
+
+        Args:
+            loc: index of grid axis.
+        """
+        mat_d = np.eye(self.quantum_dim[loc]) - np.eye(self.quantum_dim[loc],
+                                                       k=-1)
+        # compute the position-dependent effective mass terms
+        cbm = self.cb_meff[self.quantum_musk].flatten()
+        pdem_term = np.diff(cbm, prepend=cbm[0]) / cbm
+        return (mat_d.T * pdem_term).T
 
     def build_potential_operator(self):
         """Build 1D time independent Schrodinger equation potential operator. """
@@ -221,10 +248,9 @@ class SchrodingerMatrix(SchrodingerSolver):
                 mat
             ] + [np.eye(idim) for idim in self.quantum_dim[loc + 1:]
                 ] + [1]  # auxiliary element for 1d solver
-            delta = self.grid[loc][1] - self.grid[loc][0]
             # coeff = -0.5 * const.hbar**2 * self.cb_meff * self.beta**2 / delta**2
             coeff = -0.5 * const.hbar**2 / self.cb_meff[
-                self.quantum_musk].reshape(self.quantum_dim) / delta**2
+                self.quantum_musk].reshape(self.quantum_dim)
             # construct n-d kinetic operator by tensor product
             k_opt = tensor(*kron_list)
             # tensor contraction
@@ -233,7 +259,7 @@ class SchrodingerMatrix(SchrodingerSolver):
             #                   np.arange(len(self.quantum_dim * 2)), coeff,
             #                   np.arange(len(self.quantum_dim)),
             #                   np.arange(len(self.quantum_dim * 2)))
-            k_opt = k_opt * np.min(coeff)  # quantum well has the smallest m_e
+            k_opt = (k_opt.T * coeff).T  # quantum well has the smallest m_e
             k_mat_list.append(
                 k_opt.reshape(np.prod(self.quantum_dim),
                               np.prod(self.quantum_dim)))
@@ -420,45 +446,45 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from matplotlib import cm
 
-    x = np.linspace(-1, 1, 5)
-    y = np.linspace(-1, 1, 20)
-    z = np.linspace(-1, 1, 30)
-    xv, yv, zv = np.meshgrid(x, y, z, indexing='ij')
-    z_barrier = (zv <= -0.5) + (zv >= 0.5)
-    v_potential = np.zeros([5, 20, 30])
-    v_potential[z_barrier] = 10  # set barrier
-    sol = SchrodingerFiori([x, y, z], v_potential,
-                           np.ones_like(v_potential) * const.m_e)
-    eig_val, wf = sol.calc_esys()
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    surf = ax.plot_surface(yv[0],
-                           zv[0],
-                           wf[2, 2, :],
-                           cmap=cm.coolwarm,
-                           linewidth=0,
-                           antialiased=False)
-    ax.set_xlabel('y')
-    ax.set_ylabel('z')
-    ax.set_zlabel(r'$\psi(r,z)$')
-    # %%
-    x = np.linspace(-1, 1, 50)
-    y = np.linspace(-1, 1, 55)
-    xv, yv = np.meshgrid(x, y, indexing='ij')
-    x_barrier = (xv <= -0.5) + (xv >= 0.5)
-    y_barrier = (yv <= -0.5) + (yv >= 0.5)
-    v_potential = np.zeros([50, 55])
-    v_potential[x_barrier + y_barrier] = 1  # set barrier
-    sol = SchrodingerMatrix([x, y], v_potential,
-                            np.ones_like(v_potential) * const.m_e)
-    eig_val, wf = sol.calc_esys()
-    # %%
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    surf = ax.plot_surface(xv,
-                           yv,
-                           wf[3],
-                           cmap=cm.coolwarm,
-                           linewidth=0,
-                           antialiased=False)
+    # x = np.linspace(-1, 1, 5)
+    # y = np.linspace(-1, 1, 20)
+    # z = np.linspace(-1, 1, 30)
+    # xv, yv, zv = np.meshgrid(x, y, z, indexing='ij')
+    # z_barrier = (zv <= -0.5) + (zv >= 0.5)
+    # v_potential = np.zeros([5, 20, 30])
+    # v_potential[z_barrier] = 10  # set barrier
+    # sol = SchrodingerFiori([x, y, z], v_potential,
+    #                        np.ones_like(v_potential) * const.m_e)
+    # eig_val, wf = sol.calc_esys()
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # surf = ax.plot_surface(yv[0],
+    #                        zv[0],
+    #                        wf[2, 2, :],
+    #                        cmap=cm.coolwarm,
+    #                        linewidth=0,
+    #                        antialiased=False)
+    # ax.set_xlabel('y')
+    # ax.set_ylabel('z')
+    # ax.set_zlabel(r'$\psi(r,z)$')
+    # # %%
+    # x = np.linspace(-1, 1, 50)
+    # y = np.linspace(-1, 1, 55)
+    # xv, yv = np.meshgrid(x, y, indexing='ij')
+    # x_barrier = (xv <= -0.5) + (xv >= 0.5)
+    # y_barrier = (yv <= -0.5) + (yv >= 0.5)
+    # v_potential = np.zeros([50, 55])
+    # v_potential[x_barrier + y_barrier] = 1  # set barrier
+    # sol = SchrodingerMatrix([x, y], v_potential,
+    #                         np.ones_like(v_potential) * const.m_e)
+    # eig_val, wf = sol.calc_esys()
+    # # %%
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # surf = ax.plot_surface(xv,
+    #                        yv,
+    #                        wf[3],
+    #                        cmap=cm.coolwarm,
+    #                        linewidth=0,
+    #                        antialiased=False)
     # %%
     grid = np.linspace(-1, 1, 100)
     psi = np.zeros(grid.shape)
@@ -466,13 +492,17 @@ if __name__ == '__main__':
     # Quantum well
     z_barrier = (grid <= -0.5) + (grid >= 0.5)
     v_potential[z_barrier] = 10
-    quantum_region = (grid <= 0) * (grid >0 -0.5)
+    quantum_region = (grid <= 0) * (grid > 0 - 0.5)
     cb_meff = np.ones(grid.shape) * const.m_e
-    solver = SchrodingerMatrix(grid,
-                               v_potential,
-                               cb_meff,
-                               quantum_region=quantum_region)
+    cb_meff[z_barrier] = const.m_e * 0.7
+    solver = SchrodingerMatrix(
+        grid,
+        v_potential,
+        cb_meff,
+        #    quantum_region=quantum_region,
+    )
     val, vec = solver.calc_esys()
     plt.plot(solver.grid[0], solver.v_potential)
     plt.plot(solver.grid[0], vec[:3].T)
+    print(val[:3])
 # %%
