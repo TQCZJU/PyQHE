@@ -136,8 +136,9 @@ class SchrodingerShooting(SchrodingerSolver):
         wave_function = []
         for energy in eig_val:
             self._psi_iteration(energy)
-            norm = np.sqrt(np.trapz(self.psi * np.conj(self.psi),
-                                    x=self.grid))  # l2-norm
+            norm = np.sqrt(
+                np.trapezoid(self.psi * np.conj(self.psi),
+                             x=self.grid))  # l2-norm
             wave_function.append(self.psi / norm)
 
         return eig_val, np.asarray(wave_function)
@@ -183,7 +184,7 @@ class SchrodingerMatrix(SchrodingerSolver):
         self.quantum_dim = [
             len(g[m]) for g, m in zip(self.grid, self.quantum_region)
         ]
-        self.quantum_musk = reduce(np.outer,
+        self.quantum_mask = reduce(np.outer,
                                    self.quantum_region).reshape(self.dim)
         if bound_period is None:
             self.bound_period = [None] * len(self.dim)
@@ -192,7 +193,52 @@ class SchrodingerMatrix(SchrodingerSolver):
         else:
             raise ValueError('The dimension of bound_period is not match.')
 
-        self.beta = 1e31
+        # introduce new variable coordinate
+        self._beta = None
+        if len(np.unique(self.cb_meff)) > 1:
+            self.construct_mass_variation_coordinate()
+
+    def construct_mass_variation_coordinate(self):
+        """Exact solver the PDEM by changing an independent variable
+
+        Args:
+        """
+        coord_z = self.grid[0]
+        delta = self.grid[0][1] - self.grid[0][0]
+        int_m = np.sum(self.cb_meff * delta)
+        self._beta = (coord_z[-1] -
+                      coord_z[0]) / int_m  # np.trapezoid(self.cb_meff, coord_z)
+        # construct the phi coordinate
+        d_coord_phi = self._beta * self.cb_meff * delta
+        self._coord_phi = np.cumsum(d_coord_phi) + coord_z[0]
+        # interpolate the potential and effective mass
+        self._v_potential = np.interp(self._coord_phi, coord_z,
+                                      self.v_potential)
+        self._cb_meff = np.interp(self._coord_phi, coord_z, self.cb_meff)
+
+    def convert_value(self, v):
+        """Convert the value of potential from phi to z.
+
+        Args:
+            v: potential in phi coordinate.
+        """
+        if self._beta is None:
+            return v
+        else:
+            #TODO: diagonalization permute the order of eigenvalues, how to find
+            # the correct _cb_meff(phi)?
+            return v * self._beta**2 * self._cb_meff.min()
+
+    def convert_coordinate(self, mask_vec):
+        """Convert the coordinate of eigenvector from phi to z.
+
+        Args:
+            mask_vec: eigenvector in phi coordinate.
+        """
+        if True:  # self._beta is None:
+            return mask_vec
+        else:
+            return np.interp(self.grid[0], self._coord_phi, mask_vec)
 
     def build_kinetic_operator(self, loc):
         """Build 1D time independent Schrodinger equation kinetic operator.
@@ -201,9 +247,13 @@ class SchrodingerMatrix(SchrodingerSolver):
             dim: dimension of kinetic operator.
         """
         delta = self.grid[loc][1] - self.grid[loc][0]
-        mat_d = self.build_second_order_differential_operator(loc)
-        pdem_mat = self.builf_first_order_differential_operator(loc)
-        mat_d = (mat_d - pdem_mat) / delta**2
+        if self._beta is None:
+            mat_d = self.build_second_order_differential_operator(loc)
+            pdem_mat = self.builf_first_order_differential_operator(loc)
+            mat_d = (mat_d - pdem_mat) / delta**2
+        else:
+            mat_d = self.build_second_order_differential_operator(
+                loc) / delta**2
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
@@ -235,15 +285,18 @@ class SchrodingerMatrix(SchrodingerSolver):
         ], [1, -1],
                          format='csr')
         # compute the position-dependent effective mass terms
-        cbm = self.cb_meff[self.quantum_musk].flatten()
+        cbm = self.cb_meff[self.quantum_mask].flatten()
         # pdem_term = (np.roll(cbm, -1) - np.roll(cbm, 1)) / 2 / cbm
         pdem_term = np.diff(cbm, prepend=cbm[0]) / cbm
         return csr_broadcast(mat_d, pdem_term)
 
     def build_potential_operator(self):
         """Build 1D time independent Schrodinger equation potential operator. """
-
-        return sp.diags(self.v_potential[self.quantum_musk].flatten())
+        vp = self.v_potential[self.quantum_mask].flatten()
+        if self._beta is not None:
+            vp = vp / self._beta**2 / self._cb_meff[self.quantum_mask].reshape(
+                self.quantum_dim)
+        return sp.diags(vp)
 
     def hamiltonian(self):
         """Construct time independent Schrodinger equation."""
@@ -252,9 +305,13 @@ class SchrodingerMatrix(SchrodingerSolver):
         k_mat_list = []
         for loc, _ in enumerate(self.dim):
             mat = self.build_kinetic_operator(loc)
-            coeff = -0.5 * const.hbar**2 / self.cb_meff[
-                self.quantum_musk].reshape(self.quantum_dim)
-            k_mat_list.append(csr_broadcast(mat, coeff))
+            if self._beta is None:
+                coeff = -0.5 * const.hbar**2 / self.cb_meff[
+                    self.quantum_mask].reshape(self.quantum_dim)
+                k_mat_list.append(csr_broadcast(mat, coeff))
+            else:
+                coeff = -0.5 * const.hbar**2
+                k_mat_list.append(mat * coeff)
             # kron_list = [np.eye(idim) for idim in self.quantum_dim[:loc]] + [
             #     mat
             # ] + [np.eye(idim) for idim in self.quantum_dim[loc + 1:]
@@ -282,13 +339,14 @@ class SchrodingerMatrix(SchrodingerSolver):
 
     def calc_evals(self, k=3):
         ham = self.hamiltonian()
-        return sciLAS.eigsh(ham, k=k, which='SA', return_eigenvectors=False)
+        evals = sciLAS.eigsh(ham, k=k, which='SA', return_eigenvectors=False)
+        return self.convert_value(evals)
 
     def calc_esys(self, k=3):
         ham = self.hamiltonian()
-        eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
-        # assert np.allclose(ham.toarray(), ham.toarray().T)
-        # eig_val, eig_vec = sciLA.eigh(ham.toarray())
+        # eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
+        assert np.allclose(ham.toarray(), ham.toarray().T)
+        eig_val, eig_vec = sciLA.eigh(ham.toarray())
         # convert psi(phi) to psi(z)
         # coeff = 1 / self.cb_meff / self.beta
         # eig_vec = np.einsum(eig_vec.reshape(self.dim * 2),
@@ -299,18 +357,20 @@ class SchrodingerMatrix(SchrodingerSolver):
         #                           np.prod(self.quantum_dim))
         # eig_vec = np.einsum('ij,i->ij', eig_vec, 1 / self.cb_meff / self.beta)
         wave_func = []
-        for musk_vec in eig_vec.T:
+        for mask_vec in eig_vec.T:
+            # convert the coordinate of eigenvector if necessary
+            mask_vec = self.convert_coordinate(mask_vec)
             # reshape eigenvector to discrete wave function
             vec = np.zeros(self.dim)
-            vec[self.quantum_musk] = musk_vec
+            vec[self.quantum_mask] = mask_vec
             vec = vec.reshape(self.dim)
             # normalize
             norm = vec * np.conj(vec)
             for grid in self.grid[::-1]:
-                norm = np.trapz(norm, grid)
+                norm = np.trapezoid(norm, grid)
             wave_func.append(vec / np.sqrt(norm))
 
-        return eig_val, np.array(wave_func)
+        return self.convert_value(eig_val), np.array(wave_func)
 
 
 class SchrodingerFiori(SchrodingerSolver):
@@ -351,7 +411,7 @@ class SchrodingerFiori(SchrodingerSolver):
         self.quantum_dim = [
             len(g[m]) for g, m in zip(self.grid, self.quantum_region)
         ]
-        self.quantum_musk = reduce(np.outer, self.quantum_region).reshape(
+        self.quantum_mask = reduce(np.outer, self.quantum_region).reshape(
             self.quantum_dim)
         if bound_period is None:
             self.bound_period = [None] * len(self.dim)
@@ -435,7 +495,7 @@ class SchrodingerFiori(SchrodingerSolver):
             for vec in eig_vec.T:
                 # normalize
                 norm = vec * np.conj(vec)
-                norm = np.trapz(norm, self.grid[-1])
+                norm = np.trapezoid(norm, self.grid[-1])
                 wave_func.append(vec / np.sqrt(norm))
             wave_func = np.array(wave_func)
             wave_func_set.append(wave_func)
@@ -517,5 +577,15 @@ if __name__ == '__main__':
     val, vec = solver.calc_esys()
     plt.plot(solver.grid[0], solver.v_potential)
     plt.plot(solver.grid[0], vec[:3].T)
+    print(val[:3])
+    solver = SchrodingerShooting(
+        grid,
+        v_potential,
+        cb_meff,
+        #    quantum_region=quantum_region,
+    )
+    val, vec = solver.calc_esys()
+    plt.plot(solver.grid, solver.v_potential)
+    plt.plot(solver.grid, vec[:3].T)
     print(val[:3])
 # %%
