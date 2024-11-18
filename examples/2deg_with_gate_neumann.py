@@ -91,7 +91,7 @@ charge_density[elecgas_plate] = -1.0 * ll_density(xv[elecgas_plate])
 # accumulate charge density
 accumulate_q = charge_density
 for igrid in grid[::-1]:
-    accumulate_q = np.trapz(accumulate_q, x=igrid)
+    accumulate_q = np.trapezoid(accumulate_q, x=igrid)
 # assume charge has uniform distribution in the metal
 charge_density[metal_plate] = -accumulate_q / radius / length_b
 # %%

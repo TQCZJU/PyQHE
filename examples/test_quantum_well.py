@@ -36,7 +36,7 @@ def factor_q(grid, wave_func, q):
     wf2_z1, wf2_z2 = np.meshgrid(wave_func**2, wave_func**2)
     factor_matrix = wf2_z1 * wf2_z2 * exp_term
     # integrate using the composite trapezoidal rule
-    return np.trapz(np.trapz(factor_matrix, grid), grid)
+    return np.trapezoid(np.trapezoid(factor_matrix, grid), grid)
 
 
 def calc_omega(thickness=10, tol=5e-5):
@@ -81,13 +81,12 @@ def calc_omega(thickness=10, tol=5e-5):
     symmetry_axis = popt[1]
     # calculate standard deviation
     # the standard deviation of the charge distribution from its center, from PRL, 127, 056801 (2021)
-    charge_distribution = res.electron_density / np.trapz(
+    charge_distribution = res.electron_density / np.trapezoid(
         res.electron_density, res.grid[0])
     sigma = np.sqrt(
-        np.trapz(charge_distribution * (res.grid[0] - symmetry_axis)**2, res.grid[0]))
-    plt.plot(res.grid[0],
-             wf2,
-             label=r'$|\Psi(z)|^2$')
+        np.trapezoid(charge_distribution * (res.grid[0] - symmetry_axis)**2,
+                     res.grid[0]))
+    plt.plot(res.grid[0], wf2, label=r'$|\Psi(z)|^2$')
     plt.plot(res.grid[0],
              charge_distribution,
              label='Charge distribution',

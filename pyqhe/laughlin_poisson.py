@@ -11,6 +11,8 @@ from pyqhe.core.structure import Structure2D
 from pyqhe.submodules import basis, interaction, hamiltonian, pseudo, utils
 
 length_b = 7.1
+
+
 # %%
 class OptimizeResult:
     """Optimize result about self-consistent iteration."""
@@ -113,20 +115,18 @@ class LaughlinPoisson:
         # adjust optimizer
         self.learning_rate = learning_rate
         # load solver
-        self.sch_solver: SchrodingerSolver = schsolver(self.grid,
-                                    self.fi,
-                                    self.cb_meff,
-                                    self.bound_period)
-        self.fermi_util = FermiStatistic(self.grid,
-                                         self.cb_meff,
-                                         self.doping)
-        self.poi_solver: PoissonSolver = poisolver(self.grid, self.doping, self.eps,
-                                    self.bound_dirichlet,
-                                    self.bound_period)
+        self.sch_solver: SchrodingerSolver = schsolver(self.grid, self.fi,
+                                                       self.cb_meff,
+                                                       self.bound_period)
+        self.fermi_util = FermiStatistic(self.grid, self.cb_meff, self.doping)
+        self.poi_solver: PoissonSolver = poisolver(self.grid, self.doping,
+                                                   self.eps,
+                                                   self.bound_dirichlet,
+                                                   self.bound_period)
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:
-            self.accumulate_q = np.trapz(self.accumulate_q, x=grid)
+            self.accumulate_q = np.trapezoid(self.accumulate_q, x=grid)
         # distance to the screening metal
         self.screen_dist = screen_dist / self.length_b
         # Cache parameters
@@ -137,7 +137,8 @@ class LaughlinPoisson:
         # initialize charge distribution without magnetic
         # assume background potential is static
         radius = np.sqrt(2 * self.num_orbit)
-        self.bg_pot = utils.calculate_background_potential(self.num_orbit, self.num_elec, radius, self.screen_dist)
+        self.bg_pot = utils.calculate_background_potential(
+            self.num_orbit, self.num_elec, radius, self.screen_dist)
         # laughlin wavefunction
         self.ll_density = self._calc_laughlin_density(self.bg_pot, 45)
 
@@ -149,7 +150,8 @@ class LaughlinPoisson:
         ge, state = hamiltonian.calculate_ground_state(
             bvecs, ccco, background_potential=background_pot)
         # note the laughlin wave function represent the in-plate density
-        return state.electron_density((self.grid[0] - self.grid[0][-1] / 2) / self.length_b)  # radial direction
+        return state.electron_density((self.grid[0] - self.grid[0][-1] / 2) /
+                                      self.length_b)  # radial direction
 
     def _calc_net_density(self, n_states, wave_func, mode='modulate'):
         """Calculate the net charge density."""
@@ -170,7 +172,7 @@ class LaughlinPoisson:
         # normalize by electric neutrality
         accumu_elec = elec_density.copy()
         for grid in self.grid[::-1]:
-            accumu_elec = np.trapz(accumu_elec, x=grid)
+            accumu_elec = np.trapezoid(accumu_elec, x=grid)
         norm = self.accumulate_q / accumu_elec
         elec_density *= norm
         # Let dopants density minus electron density
@@ -275,12 +277,15 @@ class LaughlinPoisson:
         # cut the center array of out-plane density
 
         # loss, temp_params = self._iteration(self.params)
+
+
 # %%
 from pyqhe.core import Layer
 
-
 layer_list = []
-layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))  # insert background screening plane in the middle
+layer_list.append(
+    Layer(20, 0.24, 0.0,
+          name='barrier'))  # insert background screening plane in the middle
 layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
 layer_list.append(Layer(5, 0.24, 0.0, name='spacer'))
 layer_list.append(Layer(20, 0, 0, name='quantum_well'))
@@ -289,7 +294,11 @@ layer_list.append(Layer(2, 0.24, 5e17, name='n-type'))
 layer_list.append(Layer(20, 0.24, 0.0, name='barrier'))
 
 dist = 27  # electron locate at the center of wall
-model2d = Structure2D(layer_list, width=100, temp=10, delta=1, bound_period=[True, False])
+model2d = Structure2D(layer_list,
+                      width=100,
+                      temp=10,
+                      delta=1,
+                      bound_period=[True, False])
 # add boundary condition
 grid = model2d.universal_grid
 delta = grid[0][1] - grid[0][0]
@@ -300,7 +309,11 @@ bound = np.empty_like(xv)
 bound[:] = np.nan
 bound[top_plate * plate_length] = 0  # meV
 model2d.add_dirichlet_boundary(bound)
-lp = LaughlinPoisson(num_elec=6, num_orbit=18, length_b=length_b, model=model2d, screen_dist=dist)
+lp = LaughlinPoisson(num_elec=6,
+                     num_orbit=18,
+                     length_b=length_b,
+                     model=model2d,
+                     screen_dist=dist)
 # %%
 loss, charge_pot = lp._iteration(0)
 # %%

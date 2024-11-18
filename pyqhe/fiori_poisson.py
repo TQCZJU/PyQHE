@@ -109,23 +109,20 @@ class FioriPoisson:
         # adjust optimizer
         self.learning_rate = learning_rate
         # load solver
-        self.sch_solver = schsolver(self.grid,
-                                    self.fi,
-                                    self.cb_meff,
-                                    self.bound_period,
-                                    quantum_region)
-        self.fermi_util = FermiStatistic(self.grid[-1],
-                                         self.cb_meff.reshape(-1, len(self.grid[-1]))[-1],
-                                         self.doping.reshape(-1, len(self.grid[-1]))[-1])
+        self.sch_solver = schsolver(self.grid, self.fi, self.cb_meff,
+                                    self.bound_period, quantum_region)
+        self.fermi_util = FermiStatistic(
+            self.grid[-1],
+            self.cb_meff.reshape(-1, len(self.grid[-1]))[-1],
+            self.doping.reshape(-1, len(self.grid[-1]))[-1])
         self.poi_solver = poisolver(self.grid, self.doping, self.eps,
-                                    self.bound_dirichlet,
-                                    self.bound_period,
+                                    self.bound_dirichlet, self.bound_period,
                                     self.bound_neumann,
                                     self.rotational_symmetry)
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:
-            self.accumulate_q = np.trapz(self.accumulate_q, x=grid)
+            self.accumulate_q = np.trapezoid(self.accumulate_q, x=grid)
         # Cache parameters
         self.eig_val = self.sch_solver.calc_evals()
         self.repulsive = None
@@ -139,7 +136,7 @@ class FioriPoisson:
         # normalize by electric neutrality
         accumu_elec = elec_density.copy()
         for grid in self.grid[::-1]:
-            accumu_elec = np.trapz(accumu_elec, x=grid)
+            accumu_elec = np.trapezoid(accumu_elec, x=grid)
         norm = self.accumulate_q / accumu_elec
         elec_density *= norm
         # noted we consider a electron in the conductive band, and high electron
@@ -163,9 +160,13 @@ class FioriPoisson:
         eig_val, wave_func = self.sch_solver.calc_esys()
         # calculate energy band distribution
         if wave_func.ndim == 3:
-            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0], wave_func[:, 0, :], self.temp)
+            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0],
+                                                     wave_func[:,
+                                                               0, :], self.temp)
         elif wave_func.ndim == 4:
-            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0, 0], wave_func[:, 0, 0, :], self.temp)
+            _, n_states = self.fermi_util.fermilevel(eig_val[:, 0, 0],
+                                                     wave_func[:, 0,
+                                                               0, :], self.temp)
         else:
             raise ValueError('Unsupported wave function.')
         # calculate the net charge density
@@ -236,5 +237,7 @@ class FioriPoisson:
                 res.wave_function[i])
 
         return res, loss
+
+
 # %%
 # Quick test

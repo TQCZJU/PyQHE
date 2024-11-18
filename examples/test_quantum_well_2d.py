@@ -37,7 +37,7 @@ def factor_q(grid, wave_func, q):
     wf2_z1, wf2_z2 = np.meshgrid(wave_func**2, wave_func**2)
     factor_matrix = wf2_z1 * wf2_z2 * exp_term
     # integrate using the composite trapezoidal rule
-    return np.trapz(np.trapz(factor_matrix, grid), grid)
+    return np.trapezoid(np.trapezoid(factor_matrix, grid), grid)
 
 
 def calc_omega(thickness=10, tol=5e-5):

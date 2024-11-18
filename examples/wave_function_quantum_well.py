@@ -21,6 +21,7 @@ def factor_q_fh(thickness, q):
     b = 1 / thickness
     return (1 + 9 / 8 * q / b + 3 / 8 * (q / b)**2) * (1 + q / b)**(-3)
 
+
 @jax.jit
 def factor_q(grid, wave_func, q):
     """Calculate `F(q)` in reduced Coulomb interaction."""
@@ -33,7 +34,7 @@ def factor_q(grid, wave_func, q):
     # wf2_z1, wf2_z2 = np.meshgrid(wave_func, wave_func)
     factor_matrix = wf2_z1 * wf2_z2 * exp_term
     # integrate using the composite trapezoidal rule
-    return jnp.trapz(jnp.trapz(factor_matrix, grid), grid)
+    return jnp.trapezoid(jnp.trapezoid(factor_matrix, grid), grid)
 
 
 def calc_wave_function(thickness, tol=5e-5):
@@ -69,7 +70,9 @@ wf = res.wave_function[0]
 # %%
 # load Yihan's data template
 with open('../template/Ns_15.txt', 'rb') as file:
-    df = pd.read_csv(file, sep=' ', names=['index_x', 'index_y', 'q_x', 'q_y', 'f'])
+    df = pd.read_csv(file,
+                     sep=' ',
+                     names=['index_x', 'index_y', 'q_x', 'q_y', 'f'])
 # %%
 q_x = df['q_x'].to_numpy()
 q_y = df['q_y'].to_numpy()
@@ -88,7 +91,9 @@ df['form_factor'] = form_factor
 df.to_csv('../output/Ns_15_beta_0_5.txt', sep=' ')
 # %%
 plt.show()
-plt.plot(q_list, np.array([df['f'], df['form_factor']]).T, label=['f_fang-howard', 'wave_function'])
+plt.plot(q_list,
+         np.array([df['f'], df['form_factor']]).T,
+         label=['f_fang-howard', 'wave_function'])
 plt.legend()
 plt.xlabel('|q|')
 plt.show()

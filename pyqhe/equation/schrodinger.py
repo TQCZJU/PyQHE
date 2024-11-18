@@ -205,12 +205,13 @@ class SchrodingerMatrix(SchrodingerSolver):
         """
         coord_z = self.grid[0]
         delta = self.grid[0][1] - self.grid[0][0]
-        int_m = np.sum(self.cb_meff * delta)
+        int_m = np.sum(self.cb_meff[:-1] * delta)
         self._beta = (coord_z[-1] -
                       coord_z[0]) / int_m  # np.trapezoid(self.cb_meff, coord_z)
         # construct the phi coordinate
-        d_coord_phi = self._beta * self.cb_meff * delta
-        self._coord_phi = np.cumsum(d_coord_phi) + coord_z[0]
+        d_coord_phi = self._beta * self.cb_meff[:-1] * delta
+        self._coord_phi = np.insert(
+            np.cumsum(d_coord_phi) + coord_z[0], 0, coord_z[0])
         # interpolate the potential and effective mass
         self._v_potential = np.interp(self._coord_phi, coord_z,
                                       self.v_potential)
@@ -235,7 +236,7 @@ class SchrodingerMatrix(SchrodingerSolver):
         Args:
             mask_vec: eigenvector in phi coordinate.
         """
-        if True:  # self._beta is None:
+        if self._beta is None:
             return mask_vec
         else:
             return np.interp(self.grid[0], self._coord_phi, mask_vec)
@@ -576,6 +577,7 @@ if __name__ == '__main__':
     )
     val, vec = solver.calc_esys()
     plt.plot(solver.grid[0], solver.v_potential)
+    # plt.plot(solver._coord_phi, solver._v_potential)
     plt.plot(solver.grid[0], vec[:3].T)
     print(val[:3])
     solver = SchrodingerShooting(
@@ -588,4 +590,32 @@ if __name__ == '__main__':
     plt.plot(solver.grid, solver.v_potential)
     plt.plot(solver.grid, vec[:3].T)
     print(val[:3])
-# %%
+    # %%
+    fig, ax1 = plt.subplots()
+
+    # Plot the data on the first (bottom) axes
+    ax1.plot(solver.grid[0],
+             solver.v_potential,
+             label='Potential in z coordinate')
+    ax1.legend()
+    ax1.set_xlabel('z coordinate')
+    ax1.set_xticks(solver.grid[0])
+    ax1.tick_params(which='both', direction='in')
+    # Create a second (top) axes, sharing the y-axis with the first
+    ax2 = ax1.twiny()
+    # Plot the data on the second (top) axes
+    ax2.plot(solver._coord_phi,
+             solver.v_potential,
+             'r',
+             alpha=0.,
+             label='Potential in phi coordinate')
+    # ax2.legend(loc='lower left')
+    # Set the values of the second x-axis
+    ax2.set_xticks(solver._coord_phi)
+    # Set the scale of the second x-axis to log
+    # Set the label of the second x-axis
+    ax2.set_xlabel(r'$\phi$ coordinate')
+    ax2.tick_params(which='both', direction='in')
+    # Show the plot
+    # plt.title(r'Computing state and gradients ($\delta t$=0.01, T=50)')
+    plt.tight_layout()

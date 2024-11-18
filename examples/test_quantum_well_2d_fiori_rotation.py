@@ -27,14 +27,14 @@ def calc_omega(thickness, gate_voltage, tol=2e-3):
     # layer_list.append(Layer(2, 0.36, 5e17, name='n-type'))
     layer_list.append(Layer(30, 0.36, 0.0, name='barrier'))
     width = 200
-    model = Structure2D(layer_list,
-                        width,
-                        temp=10,
-                        delta=1,
-                        bound_neumann=[[True, True], [False, False]],
-                        # bound_period=[True, False],
-                        rotational_symmetry=[True, False]
-                        )
+    model = Structure2D(
+        layer_list,
+        width,
+        temp=10,
+        delta=1,
+        bound_neumann=[[True, True], [False, False]],
+        # bound_period=[True, False],
+        rotational_symmetry=[True, False])
     # add boundary condition
     grid = model.universal_grid
     delta = grid[0][1] - grid[0][0]
@@ -94,7 +94,12 @@ plt.show()
 # calculate sheet density
 screen_mask = (yv < 45)
 screen_mask_index = (res.grid[-1] < 45)
-sheet_density = np.trapz(res.electron_density[screen_mask].reshape(res.dim[:-1] + [-1,]), res.grid[-1][screen_mask_index], axis=-1)
+sheet_density = np.trapezoid(
+    res.electron_density[screen_mask].reshape(res.dim[:-1] + [
+        -1,
+    ]),
+    res.grid[-1][screen_mask_index],
+    axis=-1)
 plt.plot(res.grid[0], sheet_density * 1e14)  # unit in cm^-2
 # %%
 shape = np.array([dim / 2 for dim in res.sigma.shape], dtype=int)
@@ -127,8 +132,8 @@ ax1.set_ylabel('Gamma band edge (eV)', color='r')
 ax2 = ax1.twinx()
 
 # Plot the second dataset using the second y-axis
-ax2.plot(res.grid[1], res.electron_density[5]*1e21, label='Gate')
-ax2.plot(res.grid[1], res.electron_density[shape[0]]*1e21, 'b', label='QPC')
+ax2.plot(res.grid[1], res.electron_density[5] * 1e21, label='Gate')
+ax2.plot(res.grid[1], res.electron_density[shape[0]] * 1e21, 'b', label='QPC')
 ax2.legend()
 ax2.set_ylabel(r'Electron density ($cm^{-3}$)', color='b')
 # %%
@@ -147,8 +152,13 @@ plt.title('Potential')
 # calculate sheet density
 screen_mask = (yv < 45)
 screen_mask_index = (res.grid[-1] < 45)
-sheet_density = np.trapz(res.electron_density[screen_mask].reshape(res.dim[:-1] + [-1,]), res.grid[-1][screen_mask_index], axis=-1)
-plt.plot(res.grid[0], sheet_density*1e5, 'r')  # unit in cm^-2
+sheet_density = np.trapezoid(
+    res.electron_density[screen_mask].reshape(res.dim[:-1] + [
+        -1,
+    ]),
+    res.grid[-1][screen_mask_index],
+    axis=-1)
+plt.plot(res.grid[0], sheet_density * 1e5, 'r')  # unit in cm^-2
 plt.show()
 # %%
 plt.plot(res.grid[1], res.repulsive[shape[0]])

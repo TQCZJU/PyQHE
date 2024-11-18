@@ -35,7 +35,7 @@ class FermiStatistic:
 
         self.max_occupation = doping
         for grid in self.grid[::-1]:
-            self.max_occupation = np.trapz(self.max_occupation, grid)
+            self.max_occupation = np.trapezoid(self.max_occupation, grid)
 
         # Cache parameters
         self.fermi_energy = None
@@ -54,7 +54,7 @@ class FermiStatistic:
         # Calculate subband(specific energy levels) effective mass.
         meff_state = wave_function * np.conj(wave_function) * self.cb_meff
         for grid in self.grid[::-1]:
-            meff_state = np.trapz(meff_state, x=grid)
+            meff_state = np.trapezoid(meff_state, x=grid)
         # calculate density of 2d electron gas
         self.rho_list = meff_state / (const.hbar**2 * np.pi)
         # list all fermi energy candidate

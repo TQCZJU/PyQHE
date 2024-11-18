@@ -117,7 +117,7 @@ class SchrodingerPoisson:
         # accumulate charge density
         self.accumulate_q = self.doping
         for grid in self.grid[::-1]:
-            self.accumulate_q = np.trapz(self.accumulate_q, x=grid)
+            self.accumulate_q = np.trapezoid(self.accumulate_q, x=grid)
         # Cache parameters
         self.eig_val = self.sch_solver.calc_evals()
         self.params = None
@@ -131,7 +131,7 @@ class SchrodingerPoisson:
         # normalize by electric neutrality
         accumu_elec = elec_density.copy()
         for grid in self.grid[::-1]:
-            accumu_elec = np.trapz(accumu_elec, x=grid)
+            accumu_elec = np.trapezoid(accumu_elec, x=grid)
         norm = self.accumulate_q / accumu_elec
         elec_density *= norm
         # noted we consider a electron in the conductive band, and high electron
