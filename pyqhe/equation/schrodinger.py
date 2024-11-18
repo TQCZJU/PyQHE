@@ -4,10 +4,12 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 import numpy as np
 import scipy.linalg as sciLA
+import scipy.sparse as sp
+import scipy.sparse.linalg as sciLAS
 from scipy import optimize
 
 from pyqhe.utility.constant import const
-from pyqhe.utility.utils import tensor
+from pyqhe.utility.utils import tensor, csr_broadcast
 
 
 class SchrodingerSolver(ABC):
@@ -214,28 +216,34 @@ class SchrodingerMatrix(SchrodingerSolver):
         Args:
             loc: index of grid axis.
         """
-        mat_d = -2 * np.eye(self.quantum_dim[loc]) + np.eye(
-            self.quantum_dim[loc], k=-1) + np.eye(self.quantum_dim[loc], k=1)
+        mat_d = sp.diags([
+            np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
+            np.ones(self.dim[loc] - 1)
+        ], [-1, 0, 1],
+                         format='csr')
         return mat_d
 
     def builf_first_order_differential_operator(self, loc):
         """Build 1D time independent Schrodinger equation first order
-        differential operator.
+        differential operator use the central difference method.
 
         Args:
             loc: index of grid axis.
         """
-        mat_d = np.eye(self.quantum_dim[loc]) - np.eye(self.quantum_dim[loc],
-                                                       k=-1)
+        mat_d = sp.diags([
+            0.5 * np.ones(self.dim[loc] - 1), -0.5 * np.ones(self.dim[loc] - 1)
+        ], [1, -1],
+                         format='csr')
         # compute the position-dependent effective mass terms
         cbm = self.cb_meff[self.quantum_musk].flatten()
+        # pdem_term = (np.roll(cbm, -1) - np.roll(cbm, 1)) / 2 / cbm
         pdem_term = np.diff(cbm, prepend=cbm[0]) / cbm
-        return (mat_d.T * pdem_term).T
+        return csr_broadcast(mat_d, pdem_term)
 
     def build_potential_operator(self):
         """Build 1D time independent Schrodinger equation potential operator. """
 
-        return np.diag(self.v_potential[self.quantum_musk].flatten())
+        return sp.diags(self.v_potential[self.quantum_musk].flatten())
 
     def hamiltonian(self):
         """Construct time independent Schrodinger equation."""
@@ -244,46 +252,51 @@ class SchrodingerMatrix(SchrodingerSolver):
         k_mat_list = []
         for loc, _ in enumerate(self.dim):
             mat = self.build_kinetic_operator(loc)
-            kron_list = [np.eye(idim) for idim in self.quantum_dim[:loc]] + [
-                mat
-            ] + [np.eye(idim) for idim in self.quantum_dim[loc + 1:]
-                ] + [1]  # auxiliary element for 1d solver
-            # coeff = -0.5 * const.hbar**2 * self.cb_meff * self.beta**2 / delta**2
             coeff = -0.5 * const.hbar**2 / self.cb_meff[
                 self.quantum_musk].reshape(self.quantum_dim)
+            k_mat_list.append(csr_broadcast(mat, coeff))
+            # kron_list = [np.eye(idim) for idim in self.quantum_dim[:loc]] + [
+            #     mat
+            # ] + [np.eye(idim) for idim in self.quantum_dim[loc + 1:]
+            #     ] + [1]  # auxiliary element for 1d solver
+            # coeff = -0.5 * const.hbar**2 * self.cb_meff * self.beta**2 / delta**2
+
             # construct n-d kinetic operator by tensor product
-            k_opt = tensor(*kron_list)
+            # k_opt = tensor(*kron_list)
             # tensor contraction
             #TODO: the PDEM method looks broken
             # k_opt = np.einsum(k_opt.reshape(self.quantum_dim * 2),
             #                   np.arange(len(self.quantum_dim * 2)), coeff,
             #                   np.arange(len(self.quantum_dim)),
             #                   np.arange(len(self.quantum_dim * 2)))
-            k_opt = (k_opt.T * coeff).T  # quantum well has the smallest m_e
-            k_mat_list.append(
-                k_opt.reshape(np.prod(self.quantum_dim),
-                              np.prod(self.quantum_dim)))
+            # k_opt = (k_opt.T * coeff).T  # quantum well has the smallest m_e
+            # k_mat_list.append(
+            #     k_opt.reshape(np.prod(self.quantum_dim),
+            #                   np.prod(self.quantum_dim)))
             # k_mat_list.append(k_opt / coeff)
-        k_mat = np.sum(k_mat_list, axis=0)
+        # k_mat = np.sum(k_mat_list, axis=0)
+        k_mat = reduce(sp.kronsum, k_mat_list[::-1])
         v_mat = self.build_potential_operator()
 
         return k_mat + v_mat
 
-    def calc_evals(self):
+    def calc_evals(self, k=3):
         ham = self.hamiltonian()
-        return sciLA.eigh(ham, eigvals_only=True)
+        return sciLAS.eigsh(ham, k=k, which='SA', return_eigenvectors=False)
 
-    def calc_esys(self):
+    def calc_esys(self, k=3):
         ham = self.hamiltonian()
-        eig_val, eig_vec = sciLA.eigh(ham)
+        eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
+        # assert np.allclose(ham.toarray(), ham.toarray().T)
+        # eig_val, eig_vec = sciLA.eigh(ham.toarray())
         # convert psi(phi) to psi(z)
         # coeff = 1 / self.cb_meff / self.beta
         # eig_vec = np.einsum(eig_vec.reshape(self.dim * 2),
         #                     np.arange(len(self.dim * 2)), coeff,
         #                     np.arange(len(self.dim)),
         #                     np.arange(len(self.dim * 2)))
-        eig_vec = eig_vec.reshape(np.prod(self.quantum_dim),
-                                  np.prod(self.quantum_dim))
+        # eig_vec = eig_vec.reshape(np.prod(self.quantum_dim),
+        #                           np.prod(self.quantum_dim))
         # eig_vec = np.einsum('ij,i->ij', eig_vec, 1 / self.cb_meff / self.beta)
         wave_func = []
         for musk_vec in eig_vec.T:
