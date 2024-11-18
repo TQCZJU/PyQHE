@@ -8,7 +8,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve
 
 from pyqhe.utility.constant import const
-from pyqhe.utility.utils import tensor
+from pyqhe.utility.utils import tensor, csr_broadcast
 
 
 class PoissonSolver(ABC):
@@ -80,16 +80,14 @@ class PoissonFDM(PoissonSolver):
             edges of the simulation area
     """
 
-    def __init__(
-        self,
-        grid: np.ndarray,
-        charge_density: np.ndarray,
-        eps: np.ndarray,
-        bound_dirichlet: np.ndarray = None,
-        bound_period: list = None,
-        bound_neumann: np.ndarray = None,
-        rotational_symmetry: list = None
-    ) -> None:
+    def __init__(self,
+                 grid: np.ndarray,
+                 charge_density: np.ndarray,
+                 eps: np.ndarray,
+                 bound_dirichlet: np.ndarray = None,
+                 bound_period: list = None,
+                 bound_neumann: np.ndarray = None,
+                 rotational_symmetry: list = None) -> None:
         super().__init__()
 
         if not isinstance(grid, list):  # 1d grid
@@ -141,7 +139,38 @@ class PoissonFDM(PoissonSolver):
         elif len(rotational_symmetry) == len(self.dim):
             self.rotational_symmetry = rotational_symmetry
         else:
-            raise ValueError('The dimension of rotational_symmetry is not match.')
+            raise ValueError(
+                'The dimension of rotational_symmetry is not match.')
+
+    def build_second_order_differential_operator(self, loc):
+        """Build 1D Poisson equation second order differential operator.
+
+        Args:
+            loc: index of grid axis.
+        """
+        mat_d = sp.diags([
+            np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
+            np.ones(self.dim[loc] - 1)
+        ], [-1, 0, 1],
+                         format='csr')
+        return mat_d
+
+    def builf_first_order_differential_operator(self, loc):
+        """Build 1D Poisson equation first order differential operator
+        use the central difference method.
+
+        Args:
+            loc: index of grid axis.
+        """
+        mat_d = sp.diags([
+            0.5 * np.ones(self.dim[loc] - 1), -0.5 * np.ones(self.dim[loc] - 1)
+        ], [1, -1],
+                         format='csr')
+        # compute the position-dependent dielectric constant
+        eps = self.eps.flatten()
+        pddc_term = (np.roll(eps, -1) - np.roll(eps, 1)) / eps / 2
+        # pddc_term = np.diff(eps, prepend=eps[0]) / eps
+        return csr_broadcast(mat_d, pddc_term)
 
     def build_d_matrix(self, loc):
         """Build 1D time independent Schrodinger equation kinetic operator.
@@ -157,10 +186,8 @@ class PoissonFDM(PoissonSolver):
                              [-1, 0, 1],
                              format='csr')
         else:
-            mat_d = sp.diags([
-                np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
-                np.ones(self.dim[loc] - 1)
-            ], [-1, 0, 1], format='csr')
+            mat_d = self.build_second_order_differential_operator(
+                loc) + self.builf_first_order_differential_operator(loc)
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
@@ -191,8 +218,8 @@ class PoissonFDM(PoissonSolver):
             mat = self.build_d_matrix(loc)
             delta = self.grid[loc][1] - self.grid[loc][0]
             # assume all elements of `self.eps` are same
-            eps = self.eps.flatten()[0]
-            a_mat_list.append(mat * eps / delta**2)
+            # eps = self.eps.flatten()[0]
+            a_mat_list.append(mat / delta**2)
             # # construct n-d kinetic operator by tensor product
             # d_opt = tensor(*kron_list)
             # # tensor contraction
@@ -204,7 +231,7 @@ class PoissonFDM(PoissonSolver):
             #     d_opt.reshape(np.prod(self.dim), np.prod(self.dim)))
 
         a_mat = reduce(sp.kronsum, a_mat_list[::-1])
-        b_vec = -1.0 * self.charge_density.flatten()
+        b_vec = -1.0 * self.charge_density.flatten() / self.eps.flatten()
 
         # add Neumann boundary condition with second order accurate method
         for loc, _ in enumerate(self.dim):
@@ -278,6 +305,7 @@ class PoissonFDMCircular(PoissonFDM):
             true for set the neumann boundary condition `dV/dn=const` at the
             edges of the simulation area. Noted symmetry axis(left edge) must be set
     """
+
     def build_d_matrix(self, loc):
         """Build 1D time independent Schrodinger equation kinetic operator.
 
@@ -295,7 +323,8 @@ class PoissonFDMCircular(PoissonFDM):
             mat_d = sp.diags([
                 np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
                 np.ones(self.dim[loc] - 1)
-            ], [-1, 0, 1], format='csr')
+            ], [-1, 0, 1],
+                             format='csr')
 
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
@@ -327,18 +356,23 @@ class PoissonFDMCircular(PoissonFDM):
 # # QuickTest
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
-
-    grid = np.linspace(0, 1, 80)
+    grid = np.linspace(-1, 1, 100)
     eps = np.ones(grid.shape)
     sigma = np.zeros(grid.shape)
-    sigma[20:31] = 1
-    # sigma[40:51] = 1
-    sigma[50:61] = 1
+    # Quantum well
+    z_barrier = (grid <= -0.5) + (grid >= 0.5)
+    sigma[z_barrier] = 10
+    eps[z_barrier] = 1.3
     sol = PoissonFDM(grid, sigma, eps, bound_neumann=[[True, False]])
     sol.calc_poisson()
 
+    plt.plot(grid, sol.v_potential - sol.v_potential[0], label='V')
+    plt.plot(grid, sol.e_field, label='E')
+    plt.legend()
+    sol = PoissonODE(grid, sigma, eps)
+    sol.calc_poisson()
+
     plt.plot(grid, sol.v_potential)
-    plt.show()
     plt.plot(grid, sol.e_field)
     # %%
     delta = 0.02
