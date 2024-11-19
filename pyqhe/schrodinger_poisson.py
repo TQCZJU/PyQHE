@@ -102,17 +102,11 @@ class SchrodingerPoisson:
         # adjust optimizer
         self.learning_rate = learning_rate
         # load solver
-        self.sch_solver = schsolver(self.grid,
-                                    self.fi,
-                                    self.cb_meff,
-                                    self.bound_period,
-                                    quantum_region)
-        self.fermi_util = FermiStatistic(self.grid,
-                                         self.cb_meff,
-                                         self.doping)
+        self.sch_solver = schsolver(self.grid, self.fi, self.cb_meff,
+                                    self.bound_period, quantum_region)
+        self.fermi_util = FermiStatistic(self.grid, self.cb_meff, self.doping)
         self.poi_solver = poisolver(self.grid, self.doping, self.eps,
-                                    self.bound_dirichlet,
-                                    self.bound_period,
+                                    self.bound_dirichlet, self.bound_period,
                                     self.bound_neumann)
         # accumulate charge density
         self.accumulate_q = self.doping
@@ -178,6 +172,7 @@ class SchrodingerPoisson:
         """
         if self.params is None:
             self.params = 0  # v_potential
+            loss = 0
         for i, _ in enumerate(range(num_iter)):
             # perform a iteration
             loss, temp_params = self._iteration(self.params)

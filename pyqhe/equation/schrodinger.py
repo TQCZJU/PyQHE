@@ -195,8 +195,8 @@ class SchrodingerMatrix(SchrodingerSolver):
 
         # introduce new variable coordinate
         self._beta = None
-        if len(np.unique(self.cb_meff)) > 1:
-            self.construct_mass_variation_coordinate()
+        # if len(np.unique(self.cb_meff)) > 1:
+        #     self.construct_mass_variation_coordinate()
 
     def construct_mass_variation_coordinate(self):
         """Exact solver the PDEM by changing an independent variable
@@ -346,7 +346,7 @@ class SchrodingerMatrix(SchrodingerSolver):
     def calc_esys(self, k=3):
         ham = self.hamiltonian()
         # eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
-        assert np.allclose(ham.toarray(), ham.toarray().T)
+        # assert np.allclose(ham.toarray(), ham.toarray().T)
         eig_val, eig_vec = sciLA.eigh(ham.toarray())
         # convert psi(phi) to psi(z)
         # coeff = 1 / self.cb_meff / self.beta

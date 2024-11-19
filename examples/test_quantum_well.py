@@ -15,6 +15,7 @@ stick_list = [
     0.66575952, 0.97971301, 1.36046512, 1.64324592, 1.88372093, 2.59401286,
     3.25977239, 3.98119743
 ]  # unit in l_B
+l_b = 7.1  # magnetic length in nm
 
 
 def factor_q_fh(thickness, q):
@@ -22,9 +23,9 @@ def factor_q_fh(thickness, q):
     wave function in the perpendicular direction.
 
     Args:
-        thickness: physical meaning of electron layer thickness.
+        thickness: dimensionless electron layer thickness.
     """
-    b = 1 / thickness
+    b = l_b / thickness
     return (1 + 9 / 8 * q / b + 3 / 8 * (q / b)**2) * (1 + q / b)**(-3)
 
 
@@ -86,7 +87,11 @@ def calc_omega(thickness=10, tol=5e-5):
     sigma = np.sqrt(
         np.trapezoid(charge_distribution * (res.grid[0] - symmetry_axis)**2,
                      res.grid[0]))
-    plt.plot(res.grid[0], wf2, label=r'$|\Psi(z)|^2$')
+    sigma_2 = np.sqrt(
+        np.trapezoid(charge_distribution * res.grid[0]**2, res.grid[0]) -
+        np.trapezoid(charge_distribution * res.grid[0], res.grid[0])**2)
+    print(sigma, sigma_2)
+    plt.plot(res.grid[0], wf2, label=r'$|\Psi_0(z)|^2$')
     plt.plot(res.grid[0],
              charge_distribution,
              label='Charge distribution',
@@ -110,7 +115,8 @@ def calc_omega(thickness=10, tol=5e-5):
     plt.xlabel('wave vector q')
     plt.ylabel(r'$F(q)$')
     plt.show()
-
+    res.plot_quantum_well()
+    plt.show()
     return sigma, res
 
 
@@ -134,9 +140,9 @@ def line(x, a, b):
 
 popt1, _ = optimize.curve_fit(line, omega_list[:3], thickness_list[:3])
 # %%
-plt.plot(np.asarray(omega_list), thickness_list, label='PyQHE')
-plt.plot(np.asarray(stick_list) * 7.1, stick_nm, label='Shayegan')
-plt.xlabel(r'Layer thickness $\bar{\omega}$ (nm)')
+plt.plot(np.asarray(omega_list[:-2]) / l_b, thickness_list[:-2], '.-', label='Homemade solver')
+plt.plot(np.asarray(stick_list), stick_nm, '^', label='Shayegan')
+plt.xlabel(r'Effective layer thickness $\bar{\omega}$ ($l_B$)')
 plt.ylabel(r'Geometry thickness $\omega$ (nm)')
 plt.legend()
 # %%
