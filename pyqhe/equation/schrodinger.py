@@ -193,54 +193,6 @@ class SchrodingerMatrix(SchrodingerSolver):
         else:
             raise ValueError('The dimension of bound_period is not match.')
 
-        # introduce new variable coordinate
-        self._beta = None
-        # if len(np.unique(self.cb_meff)) > 1:
-        #     self.construct_mass_variation_coordinate()
-
-    def construct_mass_variation_coordinate(self):
-        """Exact solver the PDEM by changing an independent variable
-
-        Args:
-        """
-        coord_z = self.grid[0]
-        delta = self.grid[0][1] - self.grid[0][0]
-        int_m = np.sum(self.cb_meff[:-1] * delta)
-        self._beta = (coord_z[-1] -
-                      coord_z[0]) / int_m  # np.trapezoid(self.cb_meff, coord_z)
-        # construct the phi coordinate
-        d_coord_phi = self._beta * self.cb_meff[:-1] * delta
-        self._coord_phi = np.insert(
-            np.cumsum(d_coord_phi) + coord_z[0], 0, coord_z[0])
-        # interpolate the potential and effective mass
-        self._v_potential = np.interp(self._coord_phi, coord_z,
-                                      self.v_potential)
-        self._cb_meff = np.interp(self._coord_phi, coord_z, self.cb_meff)
-
-    def convert_value(self, v):
-        """Convert the value of potential from phi to z.
-
-        Args:
-            v: potential in phi coordinate.
-        """
-        if self._beta is None:
-            return v
-        else:
-            #TODO: diagonalization permute the order of eigenvalues, how to find
-            # the correct _cb_meff(phi)?
-            return v * self._beta**2 * self._cb_meff.min()
-
-    def convert_coordinate(self, mask_vec):
-        """Convert the coordinate of eigenvector from phi to z.
-
-        Args:
-            mask_vec: eigenvector in phi coordinate.
-        """
-        if self._beta is None:
-            return mask_vec
-        else:
-            return np.interp(self.grid[0], self._coord_phi, mask_vec)
-
     def build_kinetic_operator(self, loc):
         """Build 1D time independent Schrodinger equation kinetic operator.
 
@@ -248,13 +200,11 @@ class SchrodingerMatrix(SchrodingerSolver):
             dim: dimension of kinetic operator.
         """
         delta = self.grid[loc][1] - self.grid[loc][0]
-        if self._beta is None:
-            mat_d = self.build_second_order_differential_operator(loc)
-            pdem_mat = self.builf_first_order_differential_operator(loc)
-            mat_d = (mat_d - pdem_mat) / delta**2
-        else:
-            mat_d = self.build_second_order_differential_operator(
-                loc) / delta**2
+        mat_d = csr_broadcast(
+            self.build_first_order_differential_operator(loc, 'backward'),
+            1 / self.cb_meff)
+        mat_d = self.build_first_order_differential_operator(
+            loc, 'forward') @ mat_d / delta**2
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
@@ -274,29 +224,33 @@ class SchrodingerMatrix(SchrodingerSolver):
                          format='csr')
         return mat_d
 
-    def builf_first_order_differential_operator(self, loc):
+    def build_first_order_differential_operator(self, loc, difftype='central'):
         """Build 1D time independent Schrodinger equation first order
-        differential operator use the central difference method.
+        differential operator default use the central difference method.
 
         Args:
             loc: index of grid axis.
+            diff_type: type of differential method.
         """
-        mat_d = sp.diags([
-            0.5 * np.ones(self.dim[loc] - 1), -0.5 * np.ones(self.dim[loc] - 1)
-        ], [1, -1],
-                         format='csr')
-        # compute the position-dependent effective mass terms
-        cbm = self.cb_meff[self.quantum_mask].flatten()
-        # pdem_term = (np.roll(cbm, -1) - np.roll(cbm, 1)) / 2 / cbm
-        pdem_term = np.diff(cbm, prepend=cbm[0]) / cbm
-        return csr_broadcast(mat_d, pdem_term)
+        if difftype == 'central':
+            mat_d = sp.diags([
+                0.5 * np.ones(self.dim[loc] - 1),
+                -0.5 * np.ones(self.dim[loc] - 1)
+            ], [1, -1],
+                             format='csr')
+        elif difftype == 'forward':
+            mat_d = sp.diags(
+                [np.ones(self.dim[loc] - 1), -np.ones(self.dim[loc])], [1, 0],
+                format='csr')
+        elif difftype == 'backward':
+            mat_d = sp.diags(
+                [np.ones(self.dim[loc]), -np.ones(self.dim[loc] - 1)], [0, -1],
+                format='csr')
+        return mat_d
 
     def build_potential_operator(self):
         """Build 1D time independent Schrodinger equation potential operator. """
         vp = self.v_potential[self.quantum_mask].flatten()
-        if self._beta is not None:
-            vp = vp / self._beta**2 / self._cb_meff[self.quantum_mask].reshape(
-                self.quantum_dim)
         return sp.diags(vp)
 
     def hamiltonian(self):
@@ -306,19 +260,8 @@ class SchrodingerMatrix(SchrodingerSolver):
         k_mat_list = []
         for loc, _ in enumerate(self.dim):
             mat = self.build_kinetic_operator(loc)
-            if self._beta is None:
-                coeff = -0.5 * const.hbar**2 / self.cb_meff[
-                    self.quantum_mask].reshape(self.quantum_dim)
-                k_mat_list.append(csr_broadcast(mat, coeff))
-            else:
-                coeff = -0.5 * const.hbar**2
-                k_mat_list.append(mat * coeff)
-            # kron_list = [np.eye(idim) for idim in self.quantum_dim[:loc]] + [
-            #     mat
-            # ] + [np.eye(idim) for idim in self.quantum_dim[loc + 1:]
-            #     ] + [1]  # auxiliary element for 1d solver
-            # coeff = -0.5 * const.hbar**2 * self.cb_meff * self.beta**2 / delta**2
-
+            coeff = -0.5 * const.hbar**2
+            k_mat_list.append(mat * coeff)
             # construct n-d kinetic operator by tensor product
             # k_opt = tensor(*kron_list)
             # tensor contraction
@@ -332,7 +275,6 @@ class SchrodingerMatrix(SchrodingerSolver):
             #     k_opt.reshape(np.prod(self.quantum_dim),
             #                   np.prod(self.quantum_dim)))
             # k_mat_list.append(k_opt / coeff)
-        # k_mat = np.sum(k_mat_list, axis=0)
         k_mat = reduce(sp.kronsum, k_mat_list[::-1])
         v_mat = self.build_potential_operator()
 
@@ -341,26 +283,15 @@ class SchrodingerMatrix(SchrodingerSolver):
     def calc_evals(self, k=3):
         ham = self.hamiltonian()
         evals = sciLAS.eigsh(ham, k=k, which='SA', return_eigenvectors=False)
-        return self.convert_value(evals)
+        return evals
 
     def calc_esys(self, k=3):
         ham = self.hamiltonian()
         # eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
-        # assert np.allclose(ham.toarray(), ham.toarray().T)
+        assert np.allclose(ham.toarray(), ham.toarray().T)
         eig_val, eig_vec = sciLA.eigh(ham.toarray())
-        # convert psi(phi) to psi(z)
-        # coeff = 1 / self.cb_meff / self.beta
-        # eig_vec = np.einsum(eig_vec.reshape(self.dim * 2),
-        #                     np.arange(len(self.dim * 2)), coeff,
-        #                     np.arange(len(self.dim)),
-        #                     np.arange(len(self.dim * 2)))
-        # eig_vec = eig_vec.reshape(np.prod(self.quantum_dim),
-        #                           np.prod(self.quantum_dim))
-        # eig_vec = np.einsum('ij,i->ij', eig_vec, 1 / self.cb_meff / self.beta)
         wave_func = []
         for mask_vec in eig_vec.T:
-            # convert the coordinate of eigenvector if necessary
-            mask_vec = self.convert_coordinate(mask_vec)
             # reshape eigenvector to discrete wave function
             vec = np.zeros(self.dim)
             vec[self.quantum_mask] = mask_vec
@@ -371,7 +302,7 @@ class SchrodingerMatrix(SchrodingerSolver):
                 norm = np.trapezoid(norm, grid)
             wave_func.append(vec / np.sqrt(norm))
 
-        return self.convert_value(eig_val), np.array(wave_func)
+        return eig_val, np.array(wave_func)
 
 
 class SchrodingerFiori(SchrodingerSolver):
@@ -568,7 +499,7 @@ if __name__ == '__main__':
     v_potential[z_barrier] = 10
     quantum_region = (grid <= 0) * (grid > 0 - 0.5)
     cb_meff = np.ones(grid.shape) * const.m_e
-    cb_meff[z_barrier] = const.m_e * 0.7
+    cb_meff[z_barrier] = const.m_e * 1.35
     solver = SchrodingerMatrix(
         grid,
         v_potential,
@@ -576,9 +507,30 @@ if __name__ == '__main__':
         #    quantum_region=quantum_region,
     )
     val, vec = solver.calc_esys()
-    plt.plot(solver.grid[0], solver.v_potential)
-    # plt.plot(solver._coord_phi, solver._v_potential)
-    plt.plot(solver.grid[0], vec[:3].T)
+    fig, (ax1, ax2) = plt.subplots(2,
+                                   1,
+                                   figsize=(8, 10),
+                                   gridspec_kw={'height_ratios': [3, 1]})
+    # Top subplot
+    ax1.plot(solver.grid[0], solver.v_potential, label='Potential')
+    ax1.plot(solver.grid[0],
+             vec[0] + val[0],
+             label=r'$\psi_0$, E={:.3f}'.format(val[0]))
+    ax1.plot(solver.grid[0],
+             vec[1] + val[1],
+             label=r'$\psi_1$, E={:.3f}'.format(val[1]))
+    ax1.plot(solver.grid[0],
+             vec[2] + val[2],
+             label=r'$\psi_2$, E={:.3f}'.format(val[2]))
+    ax1.set_title('Quantum Well simulation by matrix method and shooting method')
+    ax1.set_ylabel('Energy')
+
+    # Bottom subplot
+    ax2.plot(grid, cb_meff / const.m_e, label='Effective Mass')
+    ax2.legend()
+    ax2.set_ylabel('Effective Mass')
+    ax2.set_xlabel('Position')
+
     print(val[:3])
     solver = SchrodingerShooting(
         grid,
@@ -587,9 +539,19 @@ if __name__ == '__main__':
         #    quantum_region=quantum_region,
     )
     val, vec = solver.calc_esys()
-    plt.plot(solver.grid, solver.v_potential)
-    plt.plot(solver.grid, vec[:3].T)
+    ax1.plot(solver.grid,
+             vec[0] + val[0], '.',
+             label=r'$\psi_0$ by shooting method, E={:.3f}'.format(val[0]))
+    ax1.plot(solver.grid,
+             vec[1] + val[1], '.',
+             label=r'$\psi_1$ by shooting method, E={:.3f}'.format(val[1]))
+    ax1.plot(solver.grid,
+             vec[2] + val[2], '.',
+             label=r'$\psi_2$ by shooting method, E={:.3f}'.format(val[2]))
+    ax1.legend()
     print(val[:3])
+    plt.tight_layout()
+    plt.show()
     # %%
     fig, ax1 = plt.subplots()
 
