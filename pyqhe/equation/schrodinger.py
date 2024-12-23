@@ -1,7 +1,7 @@
 # %%
 from functools import reduce
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import List, Union
 import numpy as np
 import scipy.linalg as sciLA
 import scipy.sparse as sp
@@ -9,7 +9,7 @@ import scipy.sparse.linalg as sciLAS
 from scipy import optimize
 
 from pyqhe.utility.constant import const
-from pyqhe.utility.utils import tensor, csr_broadcast
+from pyqhe.utility.utils import csr_broadcast
 
 
 class SchrodingerSolver(ABC):
@@ -200,11 +200,15 @@ class SchrodingerMatrix(SchrodingerSolver):
             dim: dimension of kinetic operator.
         """
         delta = self.grid[loc][1] - self.grid[loc][0]
-        mat_d = csr_broadcast(
-            self.build_first_order_differential_operator(loc, 'backward'),
-            1 / self.cb_meff)
-        mat_d = self.build_first_order_differential_operator(
-            loc, 'forward') @ mat_d / delta**2
+        # o(h) approach
+        # mat_d = csr_broadcast(
+        #     self.build_first_order_differential_operator(loc, 'backward'),
+        #     1 / self.cb_meff)
+        # mat_d = self.build_first_order_differential_operator(
+        #     loc, 'forward') @ mat_d / delta**2
+
+        # o(h^2) approach
+        mat_d = self.build_second_order_differential_operator(loc) / delta**2
         if self.bound_period[loc]:  # add period boundary condition
             mat_d[0, -1] = 1
             mat_d[-1, 0] = 1
@@ -217,9 +221,13 @@ class SchrodingerMatrix(SchrodingerSolver):
         Args:
             loc: index of grid axis.
         """
+        inv_cb_meff = 1 / self.cb_meff
+        mean_inv_cb_meff = (inv_cb_meff[:-1] + inv_cb_meff[1:]) / 2
+        mean_inv_cb_meff = np.append(mean_inv_cb_meff, inv_cb_meff[-1])
+        mean_inv_cb_meff = np.insert(mean_inv_cb_meff, 0, inv_cb_meff[0])
         mat_d = sp.diags([
-            np.ones(self.dim[loc] - 1), -2 * np.ones(self.dim[loc]),
-            np.ones(self.dim[loc] - 1)
+            mean_inv_cb_meff[1:-1], -mean_inv_cb_meff[:-1] -
+            mean_inv_cb_meff[1:], mean_inv_cb_meff[1:-1]
         ], [-1, 0, 1],
                          format='csr')
         return mat_d
@@ -482,7 +490,6 @@ if __name__ == '__main__':
     # sol = SchrodingerMatrix([x, y], v_potential,
     #                         np.ones_like(v_potential) * const.m_e)
     # eig_val, wf = sol.calc_esys()
-    # # %%
     # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     # surf = ax.plot_surface(xv,
     #                        yv,
@@ -493,7 +500,7 @@ if __name__ == '__main__':
     # %%
     import time
 
-    def sweep_num_mesh(num_mesh):
+    def sweep_num_mesh(num_mesh, plot=False):
         grid = np.linspace(-1, 1, num_mesh)
         psi = np.zeros(grid.shape)
         v_potential = np.zeros(grid.shape)
@@ -515,30 +522,32 @@ if __name__ == '__main__':
         wall_time_mat = end_time - start_time
         print(f'Matrix method wall time: {wall_time_mat}')
         print(val[:3])
+        if plot:
+            fig, (ax1,
+                  ax2) = plt.subplots(2,
+                                      1,
+                                      figsize=(8, 10),
+                                      gridspec_kw={'height_ratios': [3, 1]})
+            # Top subplot
+            ax1.plot(solver.grid[0], solver.v_potential, label='Potential')
+            ax1.plot(solver.grid[0],
+                     vec[0] + val[0],
+                     label=r'$\psi_0$, E={:.3f}'.format(val[0]))
+            ax1.plot(solver.grid[0],
+                     vec[1] + val[1],
+                     label=r'$\psi_1$, E={:.3f}'.format(val[1]))
+            ax1.plot(solver.grid[0],
+                     vec[2] + val[2],
+                     label=r'$\psi_2$, E={:.3f}'.format(val[2]))
+            ax1.set_title(
+                'Quantum Well simulation by matrix method and shooting method')
+            ax1.set_ylabel('Energy')
 
-        # fig, (ax1, ax2) = plt.subplots(2,
-        #                                1,
-        #                                figsize=(8, 10),
-        #                                gridspec_kw={'height_ratios': [3, 1]})
-        # # Top subplot
-        # ax1.plot(solver.grid[0], solver.v_potential, label='Potential')
-        # ax1.plot(solver.grid[0],
-        #          vec[0] + val[0],
-        #          label=r'$\psi_0$, E={:.3f}'.format(val[0]))
-        # ax1.plot(solver.grid[0],
-        #          vec[1] + val[1],
-        #          label=r'$\psi_1$, E={:.3f}'.format(val[1]))
-        # ax1.plot(solver.grid[0],
-        #          vec[2] + val[2],
-        #          label=r'$\psi_2$, E={:.3f}'.format(val[2]))
-        # ax1.set_title('Quantum Well simulation by matrix method and shooting method')
-        # ax1.set_ylabel('Energy')
-
-        # Bottom subplot
-        # ax2.plot(grid, cb_meff / const.m_e, label='Effective Mass')
-        # ax2.legend()
-        # ax2.set_ylabel('Effective Mass')
-        # ax2.set_xlabel('Position')
+            # Bottom subplot
+            ax2.plot(grid, cb_meff / const.m_e, label='Effective Mass')
+            ax2.legend()
+            ax2.set_ylabel('Effective Mass')
+            ax2.set_xlabel('Position')
 
         start_time = time.time()
         solver = SchrodingerShooting(
@@ -550,18 +559,25 @@ if __name__ == '__main__':
         val_s, vec_s = solver.calc_esys()
         end_time = time.time()
         wall_time_shooting = end_time - start_time
-        # ax1.plot(solver.grid,
-        #         vec_s[0] + val_s[0], '.',
-        #         label=r'$\psi_0$ by shooting method, E={:.3f}'.format(val_s[0]))
-        # ax1.plot(solver.grid,
-        #         vec_s[1] + val_s[1], '.',
-        #         label=r'$\psi_1$ by shooting method, E={:.3f}'.format(val[1]))
-        # ax1.plot(solver.grid,
-        #         vec_s[2] + val_s[2], '.',
-        #         label=r'$\psi_2$ by shooting method, E={:.3f}'.format(val_s[2]))
-        # ax1.legend()
-        # plt.tight_layout()
-        # plt.show()
+        if plot:
+            ax1.plot(solver.grid,
+                     vec_s[0] + val_s[0],
+                     '.',
+                     label=r'$\psi_0$ by shooting method, E={:.3f}'.format(
+                         val_s[0]))
+            ax1.plot(solver.grid,
+                     vec_s[1] + val_s[1],
+                     '.',
+                     label=r'$\psi_1$ by shooting method, E={:.3f}'.format(
+                         val[1]))
+            ax1.plot(solver.grid,
+                     vec_s[2] + val_s[2],
+                     '.',
+                     label=r'$\psi_2$ by shooting method, E={:.3f}'.format(
+                         val_s[2]))
+            ax1.legend()
+            plt.tight_layout()
+            plt.show()
 
         print(val_s[:3])
         print(f'Shooting method wall time: {wall_time_shooting}')
@@ -569,9 +585,11 @@ if __name__ == '__main__':
         overlap_0 = np.vdot(vec[0], vec_s[0]) / np.vdot(vec[0], vec[0])
         overlap_1 = np.vdot(vec[1], vec_s[1]) / np.vdot(vec[1], vec[1])
         overlap_2 = np.vdot(vec[2], vec_s[2]) / np.vdot(vec[2], vec[2])
-        return np.array([overlap_0, overlap_1, overlap_2]), wall_time_mat, wall_time_shooting
+        return np.array([overlap_0, overlap_1,
+                         overlap_2]), wall_time_mat, wall_time_shooting
 
-    # sweep_num_mesh(10)
+    sweep_num_mesh(110, plot=True)
+    # %%
     overlap_list = []
     wall_time_mat_list = []
     wall_time_shooting_list = []
@@ -591,11 +609,14 @@ if __name__ == '__main__':
                 r'$|\langle\psi_{shoot,2}|\psi_{mat,2}\rangle|^2$'
             ])
     ax.plot(range(110, 1000, 100),
-            np.abs(overlap_list[1:])**2, '.', color='black')
+            np.abs(overlap_list[1:])**2,
+            '.',
+            color='black')
     ax.set_xlabel('Number of meshes')
     ax.set_ylabel(r'Overlap $|\langle\psi_{shoot}|\psi_{mat}\rangle|^2$')
     ax.set_yscale('log')
-    ax.set_title('Wave function overlap between shooting method and matrix method')
+    ax.set_title(
+        'Wave function overlap between shooting method and matrix method')
     ax.legend()
     # %%
     # plot the wall time versus the number of meshes
