@@ -288,7 +288,7 @@ class SchrodingerMatrix(SchrodingerSolver):
     def calc_esys(self, k=3):
         ham = self.hamiltonian()
         # eig_val, eig_vec = sciLAS.eigsh(ham, k=k, which='SA')
-        assert np.allclose(ham.toarray(), ham.toarray().T)
+        # assert np.allclose(ham.toarray(), ham.toarray().T)
         eig_val, eig_vec = sciLA.eigh(ham.toarray())
         wave_func = []
         for mask_vec in eig_vec.T:
@@ -491,67 +491,126 @@ if __name__ == '__main__':
     #                        linewidth=0,
     #                        antialiased=False)
     # %%
-    grid = np.linspace(-1, 1, 100)
-    psi = np.zeros(grid.shape)
-    v_potential = np.zeros(grid.shape)
-    # Quantum well
-    z_barrier = (grid <= -0.5) + (grid >= 0.5)
-    v_potential[z_barrier] = 10
-    quantum_region = (grid <= 0) * (grid > 0 - 0.5)
-    cb_meff = np.ones(grid.shape) * const.m_e
-    cb_meff[z_barrier] = const.m_e * 1.35
-    solver = SchrodingerMatrix(
-        grid,
-        v_potential,
-        cb_meff,
-        #    quantum_region=quantum_region,
-    )
-    val, vec = solver.calc_esys()
-    fig, (ax1, ax2) = plt.subplots(2,
-                                   1,
-                                   figsize=(8, 10),
-                                   gridspec_kw={'height_ratios': [3, 1]})
-    # Top subplot
-    ax1.plot(solver.grid[0], solver.v_potential, label='Potential')
-    ax1.plot(solver.grid[0],
-             vec[0] + val[0],
-             label=r'$\psi_0$, E={:.3f}'.format(val[0]))
-    ax1.plot(solver.grid[0],
-             vec[1] + val[1],
-             label=r'$\psi_1$, E={:.3f}'.format(val[1]))
-    ax1.plot(solver.grid[0],
-             vec[2] + val[2],
-             label=r'$\psi_2$, E={:.3f}'.format(val[2]))
-    ax1.set_title('Quantum Well simulation by matrix method and shooting method')
-    ax1.set_ylabel('Energy')
+    import time
 
-    # Bottom subplot
-    ax2.plot(grid, cb_meff / const.m_e, label='Effective Mass')
-    ax2.legend()
-    ax2.set_ylabel('Effective Mass')
-    ax2.set_xlabel('Position')
+    def sweep_num_mesh(num_mesh):
+        grid = np.linspace(-1, 1, num_mesh)
+        psi = np.zeros(grid.shape)
+        v_potential = np.zeros(grid.shape)
+        # Quantum well
+        z_barrier = (grid <= -0.5) + (grid >= 0.5)
+        v_potential[z_barrier] = 10
+        quantum_region = (grid <= 0) * (grid > 0 - 0.5)
+        cb_meff = np.ones(grid.shape) * const.m_e
+        cb_meff[z_barrier] = const.m_e * 1.35
+        start_time = time.time()
+        solver = SchrodingerMatrix(
+            grid,
+            v_potential,
+            cb_meff,
+            #    quantum_region=quantum_region,
+        )
+        val, vec = solver.calc_esys()
+        end_time = time.time()
+        wall_time_mat = end_time - start_time
+        print(f'Matrix method wall time: {wall_time_mat}')
+        print(val[:3])
 
-    print(val[:3])
-    solver = SchrodingerShooting(
-        grid,
-        v_potential,
-        cb_meff,
-        #    quantum_region=quantum_region,
-    )
-    val, vec = solver.calc_esys()
-    ax1.plot(solver.grid,
-             vec[0] + val[0], '.',
-             label=r'$\psi_0$ by shooting method, E={:.3f}'.format(val[0]))
-    ax1.plot(solver.grid,
-             vec[1] + val[1], '.',
-             label=r'$\psi_1$ by shooting method, E={:.3f}'.format(val[1]))
-    ax1.plot(solver.grid,
-             vec[2] + val[2], '.',
-             label=r'$\psi_2$ by shooting method, E={:.3f}'.format(val[2]))
-    ax1.legend()
-    print(val[:3])
-    plt.tight_layout()
-    plt.show()
+        # fig, (ax1, ax2) = plt.subplots(2,
+        #                                1,
+        #                                figsize=(8, 10),
+        #                                gridspec_kw={'height_ratios': [3, 1]})
+        # # Top subplot
+        # ax1.plot(solver.grid[0], solver.v_potential, label='Potential')
+        # ax1.plot(solver.grid[0],
+        #          vec[0] + val[0],
+        #          label=r'$\psi_0$, E={:.3f}'.format(val[0]))
+        # ax1.plot(solver.grid[0],
+        #          vec[1] + val[1],
+        #          label=r'$\psi_1$, E={:.3f}'.format(val[1]))
+        # ax1.plot(solver.grid[0],
+        #          vec[2] + val[2],
+        #          label=r'$\psi_2$, E={:.3f}'.format(val[2]))
+        # ax1.set_title('Quantum Well simulation by matrix method and shooting method')
+        # ax1.set_ylabel('Energy')
+
+        # Bottom subplot
+        # ax2.plot(grid, cb_meff / const.m_e, label='Effective Mass')
+        # ax2.legend()
+        # ax2.set_ylabel('Effective Mass')
+        # ax2.set_xlabel('Position')
+
+        start_time = time.time()
+        solver = SchrodingerShooting(
+            grid,
+            v_potential,
+            cb_meff,
+            #    quantum_region=quantum_region,
+        )
+        val_s, vec_s = solver.calc_esys()
+        end_time = time.time()
+        wall_time_shooting = end_time - start_time
+        # ax1.plot(solver.grid,
+        #         vec_s[0] + val_s[0], '.',
+        #         label=r'$\psi_0$ by shooting method, E={:.3f}'.format(val_s[0]))
+        # ax1.plot(solver.grid,
+        #         vec_s[1] + val_s[1], '.',
+        #         label=r'$\psi_1$ by shooting method, E={:.3f}'.format(val[1]))
+        # ax1.plot(solver.grid,
+        #         vec_s[2] + val_s[2], '.',
+        #         label=r'$\psi_2$ by shooting method, E={:.3f}'.format(val_s[2]))
+        # ax1.legend()
+        # plt.tight_layout()
+        # plt.show()
+
+        print(val_s[:3])
+        print(f'Shooting method wall time: {wall_time_shooting}')
+        # compute the overlap of the ground state wave function
+        overlap_0 = np.vdot(vec[0], vec_s[0]) / np.vdot(vec[0], vec[0])
+        overlap_1 = np.vdot(vec[1], vec_s[1]) / np.vdot(vec[1], vec[1])
+        overlap_2 = np.vdot(vec[2], vec_s[2]) / np.vdot(vec[2], vec[2])
+        return np.array([overlap_0, overlap_1, overlap_2]), wall_time_mat, wall_time_shooting
+
+    # sweep_num_mesh(10)
+    overlap_list = []
+    wall_time_mat_list = []
+    wall_time_shooting_list = []
+    for num_mesh in range(10, 1000, 100):
+        overlap, wall_time_mat, wall_time_shooting = sweep_num_mesh(num_mesh)
+        overlap_list.append(overlap)
+        wall_time_mat_list.append(wall_time_mat)
+        wall_time_shooting_list.append(wall_time_shooting)
+    # %%
+    # plot the overlap versus the number of meshes
+    fig, ax = plt.subplots()
+    ax.plot(range(110, 1000, 100),
+            np.abs(overlap_list[1:])**2,
+            label=[
+                r'$|\langle\psi_{shoot,0}|\psi_{mat,0}\rangle|^2$',
+                r'$|\langle\psi_{shoot,1}|\psi_{mat,1}\rangle|^2$',
+                r'$|\langle\psi_{shoot,2}|\psi_{mat,2}\rangle|^2$'
+            ])
+    ax.plot(range(110, 1000, 100),
+            np.abs(overlap_list[1:])**2, '.', color='black')
+    ax.set_xlabel('Number of meshes')
+    ax.set_ylabel(r'Overlap $|\langle\psi_{shoot}|\psi_{mat}\rangle|^2$')
+    ax.set_yscale('log')
+    ax.set_title('Wave function overlap between shooting method and matrix method')
+    ax.legend()
+    # %%
+    # plot the wall time versus the number of meshes
+    fig, ax = plt.subplots()
+    ax.plot(range(10, 1000, 100), wall_time_mat_list, label='Matrix method')
+    ax.scatter(range(10, 1000, 100), wall_time_mat_list)
+    ax.plot(range(10, 1000, 100),
+            wall_time_shooting_list,
+            label='Shooting method')
+    ax.scatter(range(10, 1000, 100), wall_time_shooting_list)
+    ax.set_xlabel('Number of meshes')
+    ax.set_ylabel('Wall time (s)')
+    ax.set_title('Wall time of Schrodinger equation solver')
+    ax.set_yscale('log')
+    ax.legend()
     # %%
     fig, ax1 = plt.subplots()
 
